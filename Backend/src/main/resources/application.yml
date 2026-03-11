@@ -20,6 +20,7 @@ spring:
     bucket: kimp-bucket
 
 kimp:
+  leverage: 3
   coins:
     - btc
     - eth

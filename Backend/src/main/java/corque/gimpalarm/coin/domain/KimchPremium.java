@@ -19,31 +19,36 @@ public class KimchPremium {
     private String symbol; // BTC, ETH 등
 
     @Column(tag = true)
-    private String domesticExchange; // 업비트, 빗썸
+    private String domesticExchange; // UPBIT
 
     @Column(tag = true)
-    private String foreignExchange; // 바이낸스, 바이비트
+    private String foreignExchange; // BINANCE_SPOT, BINANCE_FUTURES
 
     @Column
-    private Double ratio; // 김프 비율 (%)
+    private Double ratio; // 계산된 김프 비율 (%)
 
     @Column
-    private Double domesticPrice; // 국내 가격
+    private Double fundingRate; // 현재 실시간 펀딩비 (선물일 경우에만 존재)
 
     @Column
-    private Double foreignPrice; // 해외 가격 (USDT)
+    private Double adjustedApr; // 자본 대비 실질 연환산 수익률 (%)
+
+    @Column
+    private Double liquidationPrice; // 예상 청산 가격 (선물 가격 기준)
 
     @Column(timestamp = true)
     private Instant time;
 
     @Builder
-    public KimchPremium(String symbol, String domesticExchange, String foreignExchange, Double ratio, Double domesticPrice, Double foreignPrice) {
+    public KimchPremium(String symbol, String domesticExchange, String foreignExchange, 
+                       Double ratio, Double fundingRate, Double adjustedApr, Double liquidationPrice) {
         this.symbol = symbol;
         this.domesticExchange = domesticExchange;
         this.foreignExchange = foreignExchange;
         this.ratio = ratio;
-        this.domesticPrice = domesticPrice;
-        this.foreignPrice = foreignPrice;
+        this.fundingRate = fundingRate;
+        this.adjustedApr = adjustedApr;
+        this.liquidationPrice = liquidationPrice;
         this.time = Instant.now();
     }
 }

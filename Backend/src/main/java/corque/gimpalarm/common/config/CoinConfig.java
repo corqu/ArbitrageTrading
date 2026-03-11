@@ -13,4 +13,5 @@ import java.util.List;
 @Setter
 public class CoinConfig {
     private List<String> coins;
+    private int leverage;
 }
