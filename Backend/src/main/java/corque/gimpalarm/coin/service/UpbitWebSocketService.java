@@ -3,9 +3,9 @@ package corque.gimpalarm.coin.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import corque.gimpalarm.coin.dto.PriceManager;
 import corque.gimpalarm.coin.dto.UpbitTickerDto;
+import corque.gimpalarm.common.config.CoinConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
@@ -28,9 +28,7 @@ public class UpbitWebSocketService {
     private final String UPBIT_WSS_URL = "wss://api.upbit.com/websocket/v1";
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final PriceManager priceManager;
-
-    @Value("${kimp.coins}")
-    private List<String> coins;
+    private final CoinConfig coinConfig;
 
     @EventListener(ApplicationReadyEvent.class)
     public void connect() {
@@ -39,7 +37,7 @@ public class UpbitWebSocketService {
         client.execute(new AbstractWebSocketHandler() {
             @Override
             public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-                String coinJson = coins.stream()
+                String coinJson = coinConfig.getCoins().stream()
                         .map(coin-> "\"" + "KRW-" + coin.toUpperCase() + "\"")
                         .collect(Collectors.joining(", "));
                 // KRW-USDT를 추가하여 환율 대용으로 사용

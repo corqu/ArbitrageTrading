@@ -4,9 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import corque.gimpalarm.coin.dto.bybit.BybitTickerDto;
 import corque.gimpalarm.coin.dto.PriceManager;
 import corque.gimpalarm.coin.dto.bybit.BybitTickerResponse;
+import corque.gimpalarm.common.config.CoinConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
@@ -27,9 +27,7 @@ public class BybitWebSocketService {
     private final String BYBIT_WSS_URL = "wss://stream.bybit.com/v5/public/spot";
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final PriceManager priceManager;
-
-    @Value("${kimp.coins}")
-    private List<String> coins;
+    private final CoinConfig coinConfig;
 
     @EventListener(ApplicationReadyEvent.class)
     public void connect() {
@@ -38,7 +36,7 @@ public class BybitWebSocketService {
         client.execute(new TextWebSocketHandler() {
             @Override
             public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-                String symbols = coins.stream()
+                String symbols = coinConfig.getCoins().stream()
                         .map(coin -> "\"tickers." + coin.toUpperCase() + "USDT\"")
                         .collect(Collectors.joining(", "));
 

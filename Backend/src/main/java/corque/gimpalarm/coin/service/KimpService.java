@@ -2,9 +2,9 @@ package corque.gimpalarm.coin.service;
 
 import corque.gimpalarm.coin.domain.KimchPremium;
 import corque.gimpalarm.coin.dto.PriceManager;
+import corque.gimpalarm.common.config.CoinConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -20,9 +20,7 @@ public class KimpService {
     private final PriceManager priceManager;
     private final CoinPriceService coinPriceService;
     private final SimpMessagingTemplate messagingTemplate;
-
-    @Value("${kimp.coins}")
-    private List<String> coins;
+    private final CoinConfig coinConfig;
 
     /**
      * 1분마다 김치 프리미엄을 계산하여 InfluxDB에 저장합니다. (배치 저장)
@@ -59,7 +57,7 @@ public class KimpService {
             return kimpList;
         }
 
-        for (String coin : coins) {
+        for (String coin : coinConfig.getCoins()) {
             String symbol = coin.toUpperCase();
             
             Double upbitPrice = priceManager.getPrice("UB_" + symbol);

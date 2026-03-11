@@ -4,9 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import corque.gimpalarm.coin.dto.binance.BinanceCombinedResponse;
 import corque.gimpalarm.coin.dto.binance.BinanceTickerDto;
 import corque.gimpalarm.coin.dto.PriceManager;
+import corque.gimpalarm.common.config.CoinConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
@@ -27,12 +27,10 @@ public class BinanceWebSocketService {
     private final String BINANCE_WSS_URL = "wss://stream.binance.com:9443/stream?streams=";
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final PriceManager priceManager;
-
-    @Value("${kimp.coins}")
-    private List<String> coins;
+    private final CoinConfig coinConfig;
 
     private String buildBinanceUrl() {
-        String streams = coins.stream()
+        String streams = coinConfig.getCoins().stream()
                 .map(coin -> coin.toLowerCase() + "usdt@ticker")
                 .collect(Collectors.joining("/"));
 

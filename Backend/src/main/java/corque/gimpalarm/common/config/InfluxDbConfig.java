@@ -9,16 +9,16 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class InfluxDbConfig {
 
-    @Value("${influxdb.url}")
+    @Value("${spring.influxdb.url}")
     private String url;
 
-    @Value("${influxdb.token}")
+    @Value("${spring.influxdb.token}")
     private String token;
 
-    @Value("${influxdb.org}")
+    @Value("${spring.influxdb.org}")
     private String org;
 
-    @Value("${influxdb.bucket}")
+    @Value("${spring.influxdb.bucket}")
     private String bucket;
 
     @Bean
