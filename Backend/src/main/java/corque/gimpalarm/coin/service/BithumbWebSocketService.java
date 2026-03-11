@@ -5,6 +5,7 @@ import corque.gimpalarm.coin.dto.BithumbTickerDto;
 import corque.gimpalarm.coin.dto.PriceManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
@@ -13,6 +14,9 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.client.WebSocketClient;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -23,6 +27,9 @@ public class BithumbWebSocketService {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final PriceManager priceManager;
 
+    @Value("${kimp.coins}")
+    private List<String> coins;
+
     @EventListener(ApplicationReadyEvent.class)
     public void connect() {
         WebSocketClient client = new StandardWebSocketClient();
@@ -30,9 +37,14 @@ public class BithumbWebSocketService {
         client.execute(new TextWebSocketHandler() {
             @Override
             public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-                log.info("빗썸 소켓 연결");
-                String subscribeMessage = "{\"type\":\"ticker\", \"symbols\": [\"BTC_KRW\"], \"tickTypes\": [\"24H\"]}";
+                String symbols = coins.stream()
+                                .map(coin -> "\"" + coin.toUpperCase() + "_KRW\"")
+                                        .collect(Collectors.joining(", "));
+
+                String subscribeMessage = String.format("{\"type\":\"ticker\", \"symbols\": [%s], \"tickTypes\": [\"1M\"]}"
+                        , symbols);
                 session.sendMessage(new TextMessage(subscribeMessage));
+                log.info("빗썸 소켓 연결");
             }
 
             @Override
@@ -41,7 +53,7 @@ public class BithumbWebSocketService {
                 
                 if (ticker.getContent() != null && ticker.getContent().getLastPrice() != null) {
                     double price = Double.parseDouble(ticker.getContent().getLastPrice());
-                    String key = "BT_" + ticker.getContent().getSymbol();
+                    String key = "BT_" + ticker.getContent().getSymbol().split("_")[0];
                     priceManager.updatePrice(key, price);
                 }
             }

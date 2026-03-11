@@ -1,10 +1,12 @@
 package corque.gimpalarm.coin.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import corque.gimpalarm.coin.dto.BybitTickerDto;
+import corque.gimpalarm.coin.dto.bybit.BybitTickerDto;
 import corque.gimpalarm.coin.dto.PriceManager;
+import corque.gimpalarm.coin.dto.bybit.BybitTickerResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
@@ -13,6 +15,9 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.client.WebSocketClient;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -23,6 +28,9 @@ public class BybitWebSocketService {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final PriceManager priceManager;
 
+    @Value("${kimp.coins}")
+    private List<String> coins;
+
     @EventListener(ApplicationReadyEvent.class)
     public void connect() {
         WebSocketClient client = new StandardWebSocketClient();
@@ -30,19 +38,26 @@ public class BybitWebSocketService {
         client.execute(new TextWebSocketHandler() {
             @Override
             public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-                log.info("바이비트 소켓 연결");
-                String subscribeMessage = "{\"op\": \"subscribe\", \"args\": [\"tickers.BTCUSDT\"]}";
+                String symbols = coins.stream()
+                        .map(coin -> "\"tickers." + coin.toUpperCase() + "USDT\"")
+                        .collect(Collectors.joining(", "));
+
+                String subscribeMessage = String.format("{\"op\": \"subscribe\", \"args\": [%s]}", symbols);
                 session.sendMessage(new TextMessage(subscribeMessage));
+                log.info("바이비트 소켓 연결 및 구독: {}", symbols);
             }
 
             @Override
             protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
-                BybitTickerDto ticker = objectMapper.readValue(message.getPayload(), BybitTickerDto.class);
-                
-                if (ticker.getData() != null && ticker.getData().getLastPrice() != null) {
-                    double price = Double.parseDouble(ticker.getData().getLastPrice());
-                    String key = "BY_" + ticker.getData().getSymbol();
-                    priceManager.updatePrice(key, price);
+                BybitTickerResponse response = objectMapper.readValue(message.getPayload(), BybitTickerResponse.class);
+
+                if (response.getData() != null) {
+                    BybitTickerDto ticker = response.getData();
+                    if (ticker.getLastPrice() != null) {
+                        double price = Double.parseDouble(ticker.getLastPrice());
+                        String key = "BY_" + ticker.getSymbol().replace("USDT", "").toUpperCase();
+                        priceManager.updatePrice(key, price);
+                    }
                 }
             }
 

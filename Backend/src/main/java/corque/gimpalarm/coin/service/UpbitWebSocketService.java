@@ -5,6 +5,7 @@ import corque.gimpalarm.coin.dto.PriceManager;
 import corque.gimpalarm.coin.dto.UpbitTickerDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
@@ -16,6 +17,8 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.AbstractWebSocketHandler;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -26,6 +29,9 @@ public class UpbitWebSocketService {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final PriceManager priceManager;
 
+    @Value("${kimp.coins}")
+    private List<String> coins;
+
     @EventListener(ApplicationReadyEvent.class)
     public void connect() {
         WebSocketClient client = new StandardWebSocketClient();
@@ -33,10 +39,13 @@ public class UpbitWebSocketService {
         client.execute(new AbstractWebSocketHandler() {
             @Override
             public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-                log.info("업비트 소켓 연결");
-                // 업비트는 리스트 형태의 구독 메시지를 요구함
-                String subscribeMessage = "[{\"ticket\":\"test\"},{\"type\":\"ticker\",\"codes\":[\"KRW-BTC\"]}]";
+                String coinJson = coins.stream()
+                        .map(coin-> "\"" + "KRW-" + coin.toUpperCase() + "\"")
+                        .collect(Collectors.joining(", "));
+                String subscribeMessage = String.format("[{\"ticket\":\"my_kimp_project\"},{\"type\":\"ticker\",\"codes\":[%s]}]"
+                        , coinJson);
                 session.sendMessage(new TextMessage(subscribeMessage));
+                log.info("업비트 소켓 연결");
             }
 
             @Override
@@ -47,7 +56,7 @@ public class UpbitWebSocketService {
                 
                 if (ticker.getCode() != null) {
                     double price = ticker.getTradePrice();
-                    String key = "UB_" + ticker.getCode();
+                    String key = "UB_" + ticker.getCode().split("-")[1].toUpperCase();
                     priceManager.updatePrice(key, price);
                 }
             }
