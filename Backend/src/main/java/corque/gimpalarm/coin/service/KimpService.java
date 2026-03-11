@@ -21,6 +21,7 @@ public class KimpService {
     private final CoinPriceService coinPriceService;
     private final SimpMessagingTemplate messagingTemplate;
     private final CoinConfig coinConfig;
+    private final TelegramService telegramService;
 
     /**
      * 1분마다 김치 프리미엄을 계산하여 InfluxDB에 저장합니다. (배치 저장)
@@ -35,13 +36,42 @@ public class KimpService {
     }
 
     /**
-     * 실시간 김프 정보를 프론트엔드로 전송합니다. (0.5초 주기)
+     * 현재 정렬된 김프 리스트를 반환합니다. (REST API 용)
+     */
+    public List<KimchPremium> getCurrentKimpList() {
+        List<KimchPremium> kimpList = calculateAllKimp();
+        if (!kimpList.isEmpty()) {
+            kimpList.sort((a, b) -> {
+                Double aprA = a.getAdjustedApr() != null ? a.getAdjustedApr() : -100.0;
+                Double aprB = b.getAdjustedApr() != null ? b.getAdjustedApr() : -100.0;
+                return aprB.compareTo(aprA);
+            });
+        }
+        return kimpList;
+    }
+
+    /**
+     * 실시간 김프 정보를 프론트엔드로 전송하고 알림을 보냅니다. (0.5초 주기)
      */
     @Scheduled(fixedRate = 500)
     public void sendRealTimeKimp() {
-        List<KimchPremium> kimpList = calculateAllKimp();
+        List<KimchPremium> kimpList = getCurrentKimpList();
         if (!kimpList.isEmpty()) {
-            // /topic/kimp 경로를 구독 중인 모든 클라이언트에게 전송
+            // 임계치 체크 및 알림 전송 (업비트-바이낸스 선물 조합만 체크)
+            for (KimchPremium kimp : kimpList) {
+                if ("BINANCE_FUTURES".equals(kimp.getForeignExchange()) && 
+                    kimp.getAdjustedApr() != null && 
+                    kimp.getAdjustedApr() >= coinConfig.getNotificationThreshold()) {
+                    
+                    if (telegramService.shouldSendAlert(kimp.getSymbol())) {
+                        String msg = String.format("[차익거래 알림] %s\n수익률(APR): %.2f%%\n김프: %.2f%%\n펀딩비: %.4f%%", 
+                                                    kimp.getSymbol(), kimp.getAdjustedApr(), kimp.getRatio(), kimp.getFundingRate());
+                        telegramService.sendMessage(msg);
+                    }
+                }
+            }
+
+            // /topic/kimp 경로를 구독 중인 모든 클라이언트에게 정렬된 리스트 전송
             messagingTemplate.convertAndSend("/topic/kimp", kimpList);
         }
     }

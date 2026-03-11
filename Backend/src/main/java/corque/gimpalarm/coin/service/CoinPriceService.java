@@ -44,4 +44,20 @@ public class CoinPriceService {
         WriteApiBlocking writeApi = influxDBClient.getWriteApiBlocking();
         writeApi.writeMeasurements(config.getBucket(), config.getOrg(), WritePrecision.MS, kimpList);
     }
+
+    /**
+     * 특정 코인의 최근 김프 히스토리를 조회합니다.
+     */
+    public List<KimchPremium> getKimpHistory(String symbol, String range) {
+        String query = String.format(
+            "from(bucket: \"%s\") " +
+            "|> range(start: %s) " +
+            "|> filter(fn: (r) => r[\"_measurement\"] == \"kimp\") " +
+            "|> filter(fn: (r) => r[\"symbol\"] == \"%s\") " +
+            "|> pivot(rowKey:[\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")",
+            config.getBucket(), range, symbol.toUpperCase()
+        );
+
+        return influxDBClient.getQueryApi().query(query, config.getOrg(), KimchPremium.class);
+    }
 }

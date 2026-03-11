@@ -20,7 +20,11 @@ spring:
     bucket: kimp-bucket
 
 kimp:
-  leverage: 3
+  leverage:
+  notification-threshold: 5.0  # 연환산 수익률(APR)이 5% 이상일 때 알림
+  telegram:
+    bot-token: ${BotToken}
+    chat-id: ${ChatID}
   coins:
     - btc
     - eth

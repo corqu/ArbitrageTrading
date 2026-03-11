@@ -14,4 +14,13 @@ import java.util.List;
 public class CoinConfig {
     private List<String> coins;
     private int leverage;
+    private double notificationThreshold;
+    private Telegram telegram = new Telegram();
+
+    @Getter
+    @Setter
+    public static class Telegram {
+        private String botToken;
+        private String chatId;
+    }
 }
