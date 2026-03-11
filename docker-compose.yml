@@ -1,0 +1,17 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysql_kimp
+    ports:
+      - "3306:3306"
+    env_file:
+      - .env
+    volumes:
+      - ./mysql/data:/var/lib/mysql
+    restart: always
+
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb_kimp
+    ports:
+      - "8086:8086"
