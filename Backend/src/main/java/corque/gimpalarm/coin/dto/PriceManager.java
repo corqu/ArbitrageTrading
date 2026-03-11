@@ -21,4 +21,12 @@ public class PriceManager {
     public Double getPrice(String key){
         return prices.get(key);
     }
+
+    public Double getCurrentUsdKrw() {
+        return currentUsdKrw;
+    }
+
+    public Map<String, Double> getAllPrices() {
+        return prices;
+    }
 }

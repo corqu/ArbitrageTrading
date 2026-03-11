@@ -42,10 +42,11 @@ public class UpbitWebSocketService {
                 String coinJson = coins.stream()
                         .map(coin-> "\"" + "KRW-" + coin.toUpperCase() + "\"")
                         .collect(Collectors.joining(", "));
-                String subscribeMessage = String.format("[{\"ticket\":\"my_kimp_project\"},{\"type\":\"ticker\",\"codes\":[%s]}]"
+                // KRW-USDT를 추가하여 환율 대용으로 사용
+                String subscribeMessage = String.format("[{\"ticket\":\"my_kimp_project\"},{\"type\":\"ticker\",\"codes\":[%s, \"KRW-USDT\"]}]"
                         , coinJson);
                 session.sendMessage(new TextMessage(subscribeMessage));
-                log.info("업비트 소켓 연결");
+                log.info("업비트 소켓 연결 (USDT 포함)");
             }
 
             @Override
@@ -53,11 +54,16 @@ public class UpbitWebSocketService {
                 // 업비트는 기본적으로 바이너리 메시지를 보냄
                 String payload = new String(message.getPayload().array(), StandardCharsets.UTF_8);
                 UpbitTickerDto ticker = objectMapper.readValue(payload, UpbitTickerDto.class);
-                
+
                 if (ticker.getCode() != null) {
                     double price = ticker.getTradePrice();
-                    String key = "UB_" + ticker.getCode().split("-")[1].toUpperCase();
-                    priceManager.updatePrice(key, price);
+
+                    if ("KRW-USDT".equals(ticker.getCode())) {
+                        priceManager.updateUsdKrw(price); // 환율 업데이트
+                    } else {
+                        String key = "UB_" + ticker.getCode().split("-")[1].toUpperCase();
+                        priceManager.updatePrice(key, price);
+                    }
                 }
             }
 

@@ -4,6 +4,7 @@ import com.influxdb.client.InfluxDBClient;
 import com.influxdb.client.WriteApiBlocking;
 import com.influxdb.client.domain.WritePrecision;
 import corque.gimpalarm.coin.domain.CoinPrice;
+import corque.gimpalarm.coin.domain.KimchPremium;
 import corque.gimpalarm.common.config.InfluxDbConfig;
 import org.springframework.stereotype.Service;
 
@@ -34,5 +35,13 @@ public class CoinPriceService {
     public void savePrices(List<CoinPrice> coinPrices) {
         WriteApiBlocking writeApi = influxDBClient.getWriteApiBlocking();
         writeApi.writeMeasurements(config.getBucket(), config.getOrg(), WritePrecision.MS, coinPrices);
+    }
+
+    /**
+     * 김치 프리미엄 데이터를 InfluxDB에 저장합니다.
+     */
+    public void saveKimchPremiums(List<KimchPremium> kimpList) {
+        WriteApiBlocking writeApi = influxDBClient.getWriteApiBlocking();
+        writeApi.writeMeasurements(config.getBucket(), config.getOrg(), WritePrecision.MS, kimpList);
     }
 }
