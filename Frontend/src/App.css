@@ -303,13 +303,63 @@ td {
   animation: spin 1s linear infinite;
 }
 
-.dashboard-loading {
+/* 백테스트 UI 스타일 */
+.backtest-container {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.backtest-inputs {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  align-items: flex-end;
+}
+
+.input-group {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  height: 100vh;
-  background-color: var(--bg-color);
+  gap: 0.5rem;
+}
+
+.input-group label {
+  font-size: 0.75rem;
   color: var(--text-secondary);
-  gap: 1.5rem;
+}
+
+.input-group input {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+  color: var(--text-primary);
+  width: 80px;
+  font-weight: 600;
+}
+
+.backtest-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1rem;
+  background: rgba(56, 189, 248, 0.03);
+  padding: 1rem;
+  border-radius: 0.75rem;
+}
+
+.result-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.result-label {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.result-value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--accent-color);
 }

@@ -6,6 +6,7 @@ export interface KimchPremium {
   fundingRate: number | null;
   adjustedApr: number | null;
   liquidationPrice: number | null;
+  tradeVolume: number | null;
   time?: string;
 }
 
