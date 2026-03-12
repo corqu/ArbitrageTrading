@@ -36,12 +36,15 @@ public class KimchPremium {
     @Column
     private Double liquidationPrice; // 예상 청산 가격 (선물 가격 기준)
 
+    @Column
+    private Double tradeVolume; // 업비트 24시간 누적 거래대금 (KRW)
+
     @Column(timestamp = true)
     private Instant time;
 
     @Builder
     public KimchPremium(String symbol, String domesticExchange, String foreignExchange, 
-                       Double ratio, Double fundingRate, Double adjustedApr, Double liquidationPrice) {
+                       Double ratio, Double fundingRate, Double adjustedApr, Double liquidationPrice, Double tradeVolume) {
         this.symbol = symbol;
         this.domesticExchange = domesticExchange;
         this.foreignExchange = foreignExchange;
@@ -49,6 +52,7 @@ public class KimchPremium {
         this.fundingRate = fundingRate;
         this.adjustedApr = adjustedApr;
         this.liquidationPrice = liquidationPrice;
+        this.tradeVolume = tradeVolume;
         this.time = Instant.now();
     }
 }

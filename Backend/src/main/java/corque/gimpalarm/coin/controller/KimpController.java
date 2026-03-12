@@ -1,6 +1,7 @@
 package corque.gimpalarm.coin.controller;
 
 import corque.gimpalarm.coin.domain.KimchPremium;
+import corque.gimpalarm.coin.service.CoinPriceService;
 import corque.gimpalarm.coin.service.KimpService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;

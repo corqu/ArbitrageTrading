@@ -23,9 +23,11 @@ public class KimpService {
     private final CoinConfig coinConfig;
     private final TelegramService telegramService;
 
-    /**
-     * 1분마다 김치 프리미엄을 계산하여 InfluxDB에 저장합니다. (배치 저장)
-     */
+    // 수수료 및 슬리피지 설정 (비율로 환산, 0.0005 = 0.05%)
+    private static final double UPBIT_FEE = 0.0005;       // 업비트 현물 수수료 (0.05%)
+    private static final double BINANCE_FUTURES_FEE = 0.0002; // 바이낸스 선물 수수료
+    private static final double SLIPPAGE = 0.001;         // 예상 슬리피지 (0.1%)
+
     @Scheduled(fixedRate = 60000)
     public void calculateAndSaveKimp() {
         List<KimchPremium> kimpList = calculateAllKimp();
@@ -35,9 +37,6 @@ public class KimpService {
         }
     }
 
-    /**
-     * 현재 정렬된 김프 리스트를 반환합니다. (REST API 용)
-     */
     public List<KimchPremium> getCurrentKimpList() {
         List<KimchPremium> kimpList = calculateAllKimp();
         if (!kimpList.isEmpty()) {
@@ -50,14 +49,10 @@ public class KimpService {
         return kimpList;
     }
 
-    /**
-     * 실시간 김프 정보를 프론트엔드로 전송하고 알림을 보냅니다. (0.5초 주기)
-     */
     @Scheduled(fixedRate = 500)
     public void sendRealTimeKimp() {
         List<KimchPremium> kimpList = getCurrentKimpList();
         if (!kimpList.isEmpty()) {
-            // 임계치 체크 및 알림 전송 (업비트-바이낸스 선물 조합만 체크)
             for (KimchPremium kimp : kimpList) {
                 if ("BINANCE_FUTURES".equals(kimp.getForeignExchange()) && 
                     kimp.getAdjustedApr() != null && 
@@ -70,15 +65,10 @@ public class KimpService {
                     }
                 }
             }
-
-            // /topic/kimp 경로를 구독 중인 모든 클라이언트에게 정렬된 리스트 전송
             messagingTemplate.convertAndSend("/topic/kimp", kimpList);
         }
     }
 
-    /**
-     * 현재 메모리(PriceManager)에 저장된 가격들을 기반으로 모든 김프 조합을 계산합니다.
-     */
     private List<KimchPremium> calculateAllKimp() {
         Double usdKrw = priceManager.getCurrentUsdKrw();
         List<KimchPremium> kimpList = new ArrayList<>();
@@ -87,51 +77,38 @@ public class KimpService {
             return kimpList;
         }
 
-        for (String coin : coinConfig.getCoins()) {
-            String symbol = coin.toUpperCase();
-            
-            Double upbitPrice = priceManager.getPrice("UB_" + symbol);
-            Double binanceSpotPrice = priceManager.getPrice("BN_" + symbol); // 현물
-            Double binanceFuturesPrice = priceManager.getPrice("BN_F_" + symbol); // 선물
-            Double fundingRate = priceManager.getFundingRate(symbol); // 펀딩피
+        priceManager.getAllPrices().keySet().stream()
+            .filter(key -> key.startsWith("UB_"))
+            .map(key -> key.substring(3))
+            .forEach(symbol -> {
+                Double upbitPrice = priceManager.getPrice("UB_" + symbol);
+                Double binanceFuturesPrice = priceManager.getPrice("BN_F_" + symbol);
+                Double fundingRate = priceManager.getFundingRate(symbol);
+                Double tradeVolume = priceManager.getTradeVolume(symbol); // 거래대금
 
-            // 1. 업비트 현물 - 바이낸스 선물 차익거래 (핵심)
-            if (upbitPrice != null && binanceFuturesPrice != null) {
-                kimpList.add(calculateKimp(symbol, "UPBIT", "BINANCE_FUTURES", 
-                                          upbitPrice, binanceFuturesPrice, fundingRate, usdKrw));
-            }
+                if (upbitPrice != null && binanceFuturesPrice != null) {
+                    kimpList.add(calculateKimp(symbol, "UPBIT", "BINANCE_FUTURES", 
+                                              upbitPrice, binanceFuturesPrice, fundingRate, usdKrw, tradeVolume));
+                }
+            });
 
-            // 2. 업비트 현물 - 바이낸스 현물 (참고용 기존 김프)
-            if (upbitPrice != null && binanceSpotPrice != null) {
-                kimpList.add(calculateKimp(symbol, "UPBIT", "BINANCE_SPOT", 
-                                          upbitPrice, binanceSpotPrice, null, usdKrw));
-            }
-        }
         return kimpList;
     }
 
     private KimchPremium calculateKimp(String symbol, String domesticEx, String foreignEx, 
                                       Double domesticPrice, Double foreignPrice, 
-                                      Double fundingRate, Double usdKrw) {
+                                      Double fundingRate, Double usdKrw, Double tradeVolume) {
         
-        // 김프 계산 공식: ((국내가 / (해외가 * 환율)) - 1) * 100
         double ratio = ((domesticPrice / (foreignPrice * usdKrw)) - 1) * 100;
-
         Double adjustedApr = null;
         Double liquidationPrice = null;
 
-        // 펀딩피가 있고 선물을 사용하는 경우 실질 수익률과 청산가 계산
         if (fundingRate != null && foreignEx.contains("FUTURES")) {
             int leverage = coinConfig.getLeverage();
-            
-            // 1. 자본 대비 실질 연환산 수익률 (Adjusted APR)
-            // 총 투자 자산(C) = 현물 1.0 + (선물 증거금 1.0 / Leverage)
-            // 연간 펀딩 수익(I) = 펀딩비 * 3 * 365
-            // Adjusted APR = (I / C) * 100
-            adjustedApr = ((fundingRate * 3 * 365) / (1.0 + (1.0 / leverage))) * 100;
-
-            // 2. 예상 청산가 (Liquidation Price)
-            // 숏 포지션이므로 가격 상승 시 위험. 증거금 소진율 고려 (약 10% 안전 버퍼)
+            double totalCapital = 1.0 + (1.0 / leverage);
+            double annualFundingIncome = fundingRate * 3 * 365;
+            double entryExitCost = (UPBIT_FEE * 2) + (BINANCE_FUTURES_FEE * 2) + (SLIPPAGE * 2);
+            adjustedApr = ((annualFundingIncome - entryExitCost) / totalCapital) * 100;
             liquidationPrice = foreignPrice * (1.0 + (0.9 / leverage));
         }
         
@@ -143,6 +120,7 @@ public class KimpService {
                 .fundingRate(fundingRate)
                 .adjustedApr(adjustedApr)
                 .liquidationPrice(liquidationPrice)
+                .tradeVolume(tradeVolume)
                 .build();
     }
 }
