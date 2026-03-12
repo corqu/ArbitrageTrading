@@ -15,12 +15,12 @@ spring:
 
   influxdb:
     url: http://localhost:8086
-    token: my-super-secret-auth-token
-    org: my-org
+    token: -DiLAAyIFnj9bvpxdNj8fylK8mYyBNFZRi3gHSEPsGjei40Z7ukPW5MNSiUWkFWEN7yQ2SajJEPB2GigsGvOoA==
+    org: kimp-org
     bucket: kimp-bucket
 
 kimp:
-  leverage:
+  leverage: 5
   notification-threshold: 5.0  # 연환산 수익률(APR)이 5% 이상일 때 알림
   telegram:
     bot-token: ${BotToken}
@@ -31,3 +31,22 @@ kimp:
     - sol
     - xrp
     - doge
+    - ada
+    - avax
+    - dot
+    - trx
+    - link
+    - etc
+    - apt
+    - arb
+    - shib
+    - mask
+    - sei
+    - sui
+    - inj
+    - rndr
+    - near
+
+encryption:
+  secret-key: "12345678901234567890123456789012" # 32 bytes for AES-256
+  iv: "1234567890123456" # 16 bytes for IV
