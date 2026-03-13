@@ -14,30 +14,38 @@ public class EncryptionUtil {
 
     private static final String ALGORITHM = "AES/CBC/PKCS5Padding";
     
-    @Value("${encryption.secret-key}") // 32자리의 비밀키 필요 (AES-256)
+    @Value("${encryption.secret-key}")
     private String secretKey;
 
-    @Value("${encryption.iv}") // 16자리의 IV 필요
+    @Value("${encryption.iv}")
     private String iv;
 
-    public String encrypt(String text) throws Exception {
-        Cipher cipher = Cipher.getInstance(ALGORITHM);
-        SecretKeySpec keySpec = new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "AES");
-        IvParameterSpec ivParamSpec = new IvParameterSpec(iv.getBytes(StandardCharsets.UTF_8));
-        cipher.init(Cipher.ENCRYPT_MODE, keySpec, ivParamSpec);
+    public String encrypt(String text) {
+        try {
+            Cipher cipher = Cipher.getInstance(ALGORITHM);
+            SecretKeySpec keySpec = new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "AES");
+            IvParameterSpec ivParamSpec = new IvParameterSpec(iv.getBytes(StandardCharsets.UTF_8));
+            cipher.init(Cipher.ENCRYPT_MODE, keySpec, ivParamSpec);
 
-        byte[] encrypted = cipher.doFinal(text.getBytes(StandardCharsets.UTF_8));
-        return Base64.getEncoder().encodeToString(encrypted);
+            byte[] encrypted = cipher.doFinal(text.getBytes(StandardCharsets.UTF_8));
+            return Base64.getEncoder().encodeToString(encrypted);
+        } catch (Exception e) {
+            throw new RuntimeException("Encryption failed", e);
+        }
     }
 
-    public String decrypt(String cipherText) throws Exception {
-        Cipher cipher = Cipher.getInstance(ALGORITHM);
-        SecretKeySpec keySpec = new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "AES");
-        IvParameterSpec ivParamSpec = new IvParameterSpec(iv.getBytes(StandardCharsets.UTF_8));
-        cipher.init(Cipher.DECRYPT_MODE, keySpec, ivParamSpec);
+    public String decrypt(String cipherText) {
+        try {
+            Cipher cipher = Cipher.getInstance(ALGORITHM);
+            SecretKeySpec keySpec = new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "AES");
+            IvParameterSpec ivParamSpec = new IvParameterSpec(iv.getBytes(StandardCharsets.UTF_8));
+            cipher.init(Cipher.DECRYPT_MODE, keySpec, ivParamSpec);
 
-        byte[] decodedBytes = Base64.getDecoder().decode(cipherText);
-        byte[] decrypted = cipher.doFinal(decodedBytes);
-        return new String(decrypted, StandardCharsets.UTF_8);
+            byte[] decodedBytes = Base64.getDecoder().decode(cipherText);
+            byte[] decrypted = cipher.doFinal(decodedBytes);
+            return new String(decrypted, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new RuntimeException("Decryption failed", e);
+        }
     }
 }

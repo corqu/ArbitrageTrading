@@ -13,5 +13,14 @@ import java.util.List;
 @Setter
 public class CoinConfig {
     private List<String> coins;
-    private int leverage;
+    private int leverage = 3; // 기본값 3 설정
+    private double notificationThreshold = 5.0; // 기본값 5% 설정
+    private Telegram telegram = new Telegram();
+
+    @Getter
+    @Setter
+    public static class Telegram {
+        private String botToken;
+        private String chatId;
+    }
 }

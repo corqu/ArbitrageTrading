@@ -9,11 +9,20 @@ import java.util.concurrent.ConcurrentHashMap;
 public class PriceManager {
     private final Map<String, Double> prices = new ConcurrentHashMap<>();
     private final Map<String, Double> fundingRates = new ConcurrentHashMap<>();
+    private final Map<String, Double> tradeVolumes = new ConcurrentHashMap<>();
     private final Map<String, Long> nextFundingTimes = new ConcurrentHashMap<>();
     private Double currentUsdKrw;
 
     public void updatePrice(String key, double price){
         prices.put(key, price);
+    }
+
+    public void updateTradeVolume(String symbol, double volume) {
+        tradeVolumes.put(symbol, volume);
+    }
+
+    public Double getTradeVolume(String symbol) {
+        return tradeVolumes.get(symbol);
     }
 
     public void updateFundingRate(String coin, double rate, long nextTime) {

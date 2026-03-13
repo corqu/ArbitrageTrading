@@ -44,4 +44,29 @@ public class CoinPriceService {
         WriteApiBlocking writeApi = influxDBClient.getWriteApiBlocking();
         writeApi.writeMeasurements(config.getBucket(), config.getOrg(), WritePrecision.MS, kimpList);
     }
+
+    /**
+     * 특정 코인의 최근 김프 히스토리를 조회합니다.
+     * 기간에 따라 적절히 데이터를 집계(Aggregate)하여 반환합니다.
+     */
+    public List<KimchPremium> getKimpHistory(String symbol, String range) {
+        String windowPeriod;
+        if (range.equals("-6h")) windowPeriod = "5m";
+        else if (range.equals("-24h")) windowPeriod = "10m";
+        else if (range.equals("-7d")) windowPeriod = "1h";
+        else if (range.equals("-30d")) windowPeriod = "4h";
+        else windowPeriod = "10m";
+
+        String query = String.format(
+            "from(bucket: \"%s\") " +
+            "|> range(start: %s) " +
+            "|> filter(fn: (r) => r[\"_measurement\"] == \"kimp\") " +
+            "|> filter(fn: (r) => r[\"symbol\"] == \"%s\") " +
+            "|> aggregateWindow(every: %s, fn: mean, createEmpty: false) " +
+            "|> pivot(rowKey:[\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")",
+            config.getBucket(), range, symbol.toUpperCase(), windowPeriod
+        );
+
+        return influxDBClient.getQueryApi().query(query, config.getOrg(), KimchPremium.class);
+    }
 }

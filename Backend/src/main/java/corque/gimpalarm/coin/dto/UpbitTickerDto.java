@@ -11,4 +11,7 @@ public class UpbitTickerDto {
 
     @JsonProperty("trade_price")
     private double tradePrice;
+
+    @JsonProperty("acc_trade_price_24h")
+    private double accTradePrice24h;
 }
