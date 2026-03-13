@@ -78,6 +78,32 @@ const App: React.FC = () => {
     }
   };
 
+  const formatHoldingTime = (days: number) => {
+    if (days === 0) return '0분';
+    const hours = days * 24;
+    if (hours >= 24) return `${days.toFixed(1)}일`;
+    if (hours >= 1) return `${hours.toFixed(1)}시간`;
+    const minutes = hours * 60;
+    return `${Math.round(minutes)}분`;
+  };
+
+  const runAnalysisForAll = async () => {
+    const symbols = arbitrageList.map(item => item.symbol);
+    for (const symbol of symbols) {
+      setLoadingBacktest(prev => ({ ...prev, [symbol]: true }));
+      try {
+        const response = await axios.get(`/api/arbitrage/backtest`, {
+          params: { symbol, entryKimp: globalEntryKimp, exitKimp: globalExitKimp, range: '-30d' }
+        });
+        setBacktestResults(prev => ({ ...prev, [symbol]: response.data }));
+      } catch (error) {
+        console.error(`${symbol} 분석 실패`, error);
+      } finally {
+        setLoadingBacktest(prev => ({ ...prev, [symbol]: false }));
+      }
+    }
+  };
+
   useEffect(() => {
     fetchData();
     const stompClient = new Client({
@@ -99,8 +125,13 @@ const App: React.FC = () => {
   }, []);
 
   const arbitrageList = useMemo(() => {
-    return [...kimpList].sort((a, b) => (b.adjustedApr || -100) - (a.adjustedApr || -100));
-  }, [kimpList]);
+    return [...kimpList].sort((a, b) => {
+      // 백테스트 결과가 있으면 totalReturn 기준, 없으면 기존 adjustedApr 기준
+      const resA = backtestResults[a.symbol]?.totalReturn ?? (a.adjustedApr || -100);
+      const resB = backtestResults[b.symbol]?.totalReturn ?? (b.adjustedApr || -100);
+      return resB - resA;
+    });
+  }, [kimpList, backtestResults]);
 
   const sortedKimpList = useMemo(() => {
     return [...kimpList].sort((a, b) => {
@@ -148,7 +179,12 @@ const App: React.FC = () => {
             <h2>{activeMenu === 'dashboard' ? '시장 대시보드' : '차익거래 전략 현황'}</h2>
             <p className="subtitle">{activeMenu === 'dashboard' ? `전체 ${kimpList.length}개 코인 실시간 현황` : '전체 코인 예상 수익률 및 매매 시뮬레이션'}</p>
           </div>
-          <button className="btn-refresh" onClick={fetchData}><RefreshCw size={16} /> <span>데이터 갱신</span></button>
+          <button className="btn-refresh" onClick={() => {
+            fetchData();
+            if (activeMenu === 'arbitrage' && selectedSymbol) {
+              runAnalysis(selectedSymbol);
+            }
+          }}><RefreshCw size={16} /> <span>데이터 갱신</span></button>
         </header>
 
         {activeMenu === 'dashboard' ? (
@@ -236,7 +272,14 @@ const App: React.FC = () => {
                   <label>탈출 목표 김프 (%)</label>
                   <input type="number" step="0.1" value={globalExitKimp} onChange={(e) => setGlobalExitKimp(parseFloat(e.target.value))} style={{ width: '120px', padding: '0.6rem' }} />
                 </div>
-                <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', paddingBottom: '0.6rem' }}>* 설정한 목표치 도달 시의 30일간 누적 수익을 분석합니다.</div>
+                <button 
+                  className="btn-refresh" 
+                  onClick={runAnalysisForAll}
+                  style={{ marginBottom: '0.6rem', height: 'fit-content' }}
+                >
+                  <Calculator size={16} /> <span>전체 분석 갱신</span>
+                </button>
+                <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', paddingBottom: '0.6rem' }}>* 설정한 목표치 도달 시의 30일간 누적 수익을 분석하며, 결과에 따라 리스트가 정렬됩니다.</div>
               </div>
             </div>
 
@@ -248,11 +291,21 @@ const App: React.FC = () => {
                       <div style={{ background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-color)', width: '48px', height: '48px', borderRadius: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '1rem', border: '1px solid rgba(56, 189, 248, 0.2)' }}>{rec.symbol}</div>
                       <div style={{ display: 'flex', gap: '2.5rem' }}>
                         <div><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginBottom: '0.2rem' }}>현재 김프</div><div style={{ fontWeight: 700, fontSize: '1.1rem' }} className={rec.ratio >= 0 ? 'positive' : 'negative'}>{rec.ratio.toFixed(2)}%</div></div>
-                        <div><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginBottom: '0.2rem' }}>예상 연수익 (APR)</div><div style={{ color: (rec.adjustedApr || 0) > 0 ? 'var(--success)' : 'var(--text-primary)', fontWeight: 800, fontSize: '1.1rem' }}>{rec.adjustedApr?.toFixed(2)}%</div></div>
+                        {backtestResults[rec.symbol] ? (
+                          <div>
+                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginBottom: '0.2rem' }}>30일 누적 수익</div>
+                            <div style={{ color: 'var(--success)', fontWeight: 800, fontSize: '1.1rem' }}>+{backtestResults[rec.symbol].totalReturn.toFixed(2)}%</div>
+                          </div>
+                        ) : (
+                          <div>
+                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginBottom: '0.2rem' }}>기대 수익</div>
+                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '0.2rem' }}>분석 전</div>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <button className="btn-refresh" style={{ background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', padding: '0.5rem 1.2rem' }} onClick={() => { if (selectedSymbol === rec.symbol) setSelectedSymbol(null); else { setSelectedSymbol(rec.symbol); runAnalysis(rec.symbol); } }}>
-                      {selectedSymbol === rec.symbol ? <ChevronUp size={16} /> : <BarChart3 size={16} />} <span>{selectedSymbol === rec.symbol ? '닫기' : '상세보기'}</span>
+                      {selectedSymbol === rec.symbol ? <ChevronUp size={16} /> : <BarChart3 size={16} />} <span>{selectedSymbol === rec.symbol ? '닫기' : '상세분석'}</span>
                     </button>
                   </div>
 
@@ -263,7 +316,7 @@ const App: React.FC = () => {
                       ) : backtestResults[rec.symbol] ? (
                         <div className="backtest-results" style={{ gridTemplateColumns: 'repeat(4, 1fr)', background: 'transparent', padding: 0 }}>
                           <div className="result-item"><span className="result-label">총 거래 횟수</span><span className="result-value">{backtestResults[rec.symbol].totalTrades}회</span></div>
-                          <div className="result-item"><span className="result-label">평균 홀딩 기간</span><span className="result-value">{backtestResults[rec.symbol].avgHoldingDays.toFixed(1)}일</span></div>
+                          <div className="result-item"><span className="result-label">평균 홀딩 기간</span><span className="result-value">{formatHoldingTime(backtestResults[rec.symbol].avgHoldingDays)}</span></div>
                           <div className="result-item"><span className="result-label">누적 수익률</span><span className="result-value" style={{ color: 'var(--success)' }}>+{backtestResults[rec.symbol].totalReturn.toFixed(2)}%</span></div>
                           <div className="result-item">
                             <span className="result-label">수익 상세</span>
