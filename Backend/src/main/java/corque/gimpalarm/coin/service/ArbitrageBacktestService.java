@@ -80,6 +80,7 @@ public class ArbitrageBacktestService {
         }
 
         // 통계 환산
+        double dataPeriodDays = (double) Duration.between(history.get(0).getTime(), history.get(history.size() - 1).getTime()).toMillis() / (1000.0 * 60 * 60 * 24);
         double avgHoldingDays = (totalTrades > 0) ? (totalHoldingDurationMs / (1000.0 * 60 * 60 * 24)) / totalTrades : 0;
         double totalReturn = accumulatedKimpProfit + accumulatedFundingProfit;
 
