@@ -5,7 +5,10 @@ import corque.gimpalarm.common.domain.BaseEntity;
 import corque.gimpalarm.reply.domain.Reply;
 import jakarta.persistence.*;
 import lombok.*;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -16,6 +19,7 @@ import java.util.List;
 @AllArgsConstructor
 @Builder
 @Table(name = "users")
+@EntityListeners(AuditingEntityListener.class)
 public class User extends BaseEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -27,15 +31,15 @@ public class User extends BaseEntity {
     @Column(nullable = false)
     private String password;
 
+    @Column(nullable = false)
     private String nickname;
 
-    // 업비트 API Keys (암호화되어 저장됨)
-    private String upbitAccessKey;
-    private String upbitSecretKey;
+    @CreatedDate
+    @Column(updatable = false)
+    private LocalDateTime generatedAt;
 
-    // 바이낸스 API Keys (암호화되어 저장됨)
-    private String binanceApiKey;
-    private String binanceSecretKey;
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<UserCredential> credentials = new ArrayList<>();
 
     @OneToMany(mappedBy = "writer")
     private List<Board> boards = new ArrayList<>();

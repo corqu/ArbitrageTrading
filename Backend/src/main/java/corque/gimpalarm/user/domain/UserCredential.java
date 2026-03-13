@@ -25,8 +25,8 @@ public class UserCredential extends BaseEntity {
     private String exchange; // e.g., "UPBIT", "BINANCE"
 
     @Column(nullable = false, length = 1000)
-    private String accessKey; // encrypted
+    private String apiKey; // encrypted
 
     @Column(nullable = false, length = 1000)
-    private String secretKey; // encrypted
+    private String apiSecret; // encrypted
 }
