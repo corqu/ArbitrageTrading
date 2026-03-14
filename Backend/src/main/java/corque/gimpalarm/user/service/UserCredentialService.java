@@ -24,14 +24,14 @@ public class UserCredentialService {
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + requestDto.getUserId()));
 
         // Encrypt keys using EncryptionUtil
-        String encryptedAccessKey = encryptionUtil.encrypt(requestDto.getAccessKey());
-        String encryptedSecretKey = encryptionUtil.encrypt(requestDto.getSecretKey());
+        String encryptedApiKey = encryptionUtil.encrypt(requestDto.getAccessKey());
+        String encryptedApiSecret = encryptionUtil.encrypt(requestDto.getSecretKey());
 
         UserCredential credential = UserCredential.builder()
                 .user(user)
                 .exchange(requestDto.getExchange())
-                .accessKey(encryptedAccessKey)
-                .secretKey(encryptedSecretKey)
+                .apiKey(encryptedApiKey)
+                .apiSecret(encryptedApiSecret)
                 .build();
 
         return userCredentialRepository.save(credential).getId();
