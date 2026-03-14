@@ -10,6 +10,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
 @Service
 @RequiredArgsConstructor
 public class UserCredentialService {
@@ -17,6 +20,13 @@ public class UserCredentialService {
     private final UserCredentialRepository userCredentialRepository;
     private final UserRepository userRepository;
     private final EncryptionUtil encryptionUtil;
+
+    @Transactional(readOnly = true)
+    public List<String> getUserCredentials(Long userId) {
+        return userCredentialRepository.findByUserId(userId).stream()
+                .map(UserCredential::getExchange)
+                .collect(Collectors.toList());
+    }
 
     @Transactional
     public Long registerCredential(UserCredentialRequestDto requestDto) {
@@ -27,12 +37,14 @@ public class UserCredentialService {
         String encryptedApiKey = encryptionUtil.encrypt(requestDto.getAccessKey());
         String encryptedApiSecret = encryptionUtil.encrypt(requestDto.getSecretKey());
 
-        UserCredential credential = UserCredential.builder()
-                .user(user)
-                .exchange(requestDto.getExchange())
-                .apiKey(encryptedApiKey)
-                .apiSecret(encryptedApiSecret)
-                .build();
+        UserCredential credential = userCredentialRepository.findByUserAndExchange(user, requestDto.getExchange())
+                .orElse(UserCredential.builder()
+                        .user(user)
+                        .exchange(requestDto.getExchange())
+                        .build());
+        
+        credential.setApiKey(encryptedApiKey);
+        credential.setApiSecret(encryptedApiSecret);
 
         return userCredentialRepository.save(credential).getId();
     }
@@ -40,12 +52,5 @@ public class UserCredentialService {
     @Transactional
     public void deleteCredential(Long userId, String exchange) {
         userCredentialRepository.deleteByUserIdAndExchange(userId, exchange);
-    }
-
-    @Transactional
-    public void deleteCredential(User user, String exchange) {
-        UserCredential credential = userCredentialRepository.findByUserAndExchange(user, exchange)
-                .orElseThrow(() -> new IllegalArgumentException("Credential not found for exchange: " + exchange));
-        userCredentialRepository.delete(credential);
     }
 }

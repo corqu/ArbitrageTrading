@@ -104,10 +104,9 @@ const App: React.FC = () => {
   const fetchConnectedExchanges = async () => {
     if (!isLoggedIn) return;
     try {
-      // TODO: Create a GET endpoint in backend to fetch current user's exchange list
-      // For now, let's assume we can fetch it. If endpoint is not ready, we'll implement it.
       const response = await axios.get('/api/user/credentials/list');
-      setConnectedExchanges(response.data.map((c: any) => c.exchange));
+      // 백엔드에서 List<String>을 반환하므로 바로 저장합니다.
+      setConnectedExchanges(response.data);
     } catch (err) {
       console.error('연동 목록 조회 실패', err);
     }
@@ -539,10 +538,27 @@ const App: React.FC = () => {
                 )}
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-                  {/* 실제 데이터 맵핑 영역 */}
-                  <div style={{ textAlign: 'center', padding: '2.5rem 0', color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.02)', borderRadius: '0.75rem', border: '1px dashed var(--border-color)' }}>
-                    <p style={{ fontSize: '0.9rem', margin: 0 }}>아직 연동된 거래소가 없습니다.</p>
-                  </div>
+                  {connectedExchanges.length > 0 ? (
+                    connectedExchanges.map((ex) => (
+                      <div key={ex} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', background: 'rgba(255,255,255,0.03)', borderRadius: '0.75rem', border: '1px solid var(--border-color)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+                          <div style={{ width: '32px', height: '32px', background: ex === 'UPBIT' ? '#0066ff' : '#f3ba2f', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, color: 'white', fontSize: '0.7rem' }}>{ex[0]}</div>
+                          <span style={{ fontWeight: 700 }}>{ex === 'UPBIT' ? '업비트 (Upbit)' : '바이낸스 (Binance)'}</span>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--success)', fontWeight: 600 }}>● 연결됨</span>
+                        </div>
+                        <button 
+                          onClick={() => handleDeleteExchange(ex)}
+                          style={{ padding: '0.3rem 0.8rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '0.4rem', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}
+                        >
+                          연동 해제
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '2.5rem 0', color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.02)', borderRadius: '0.75rem', border: '1px dashed var(--border-color)' }}>
+                      <p style={{ fontSize: '0.9rem', margin: 0 }}>아직 연동된 거래소가 없습니다.</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
