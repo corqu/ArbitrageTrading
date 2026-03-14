@@ -36,4 +36,16 @@ public class UserCredentialService {
 
         return userCredentialRepository.save(credential).getId();
     }
+
+    @Transactional
+    public void deleteCredential(Long userId, String exchange) {
+        userCredentialRepository.deleteByUserIdAndExchange(userId, exchange);
+    }
+
+    @Transactional
+    public void deleteCredential(User user, String exchange) {
+        UserCredential credential = userCredentialRepository.findByUserAndExchange(user, exchange)
+                .orElseThrow(() -> new IllegalArgumentException("Credential not found for exchange: " + exchange));
+        userCredentialRepository.delete(credential);
+    }
 }

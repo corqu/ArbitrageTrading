@@ -10,4 +10,6 @@ import java.util.Optional;
 public interface UserCredentialRepository extends JpaRepository<UserCredential, Long> {
     List<UserCredential> findByUserId(Long userId);
     Optional<UserCredential> findByUserAndExchange(User user, String exchange);
+
+    void deleteByUserIdAndExchange(Long userId, String exchange);
 }

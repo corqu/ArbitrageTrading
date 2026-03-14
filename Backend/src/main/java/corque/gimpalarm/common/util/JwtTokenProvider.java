@@ -17,16 +17,27 @@ import java.util.Date;
 public class JwtTokenProvider {
 
     private final SecretKey key;
-    private final long validityInMilliseconds;
+    private final long accessTokenValidity;
+    private final long refreshTokenValidity;
 
     public JwtTokenProvider(
             @Value("${jwt.token.secret-key}") String secretKey,
-            @Value("${jwt.token.expire-length}") long validityInMilliseconds) {
+            @Value("${jwt.token.access-expire-length}") long accessTokenValidity,
+            @Value("${jwt.token.refresh-expire-length}") long refreshTokenValidity) {
         this.key = Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8));
-        this.validityInMilliseconds = validityInMilliseconds;
+        this.accessTokenValidity = accessTokenValidity;
+        this.refreshTokenValidity = refreshTokenValidity;
     }
 
-    public String createToken(String email) {
+    public String createAccessToken(String email) {
+        return createToken(email, accessTokenValidity);
+    }
+
+    public String createRefreshToken(String email) {
+        return createToken(email, refreshTokenValidity);
+    }
+
+    private String createToken(String email, long validityInMilliseconds) {
         Claims claims = Jwts.claims().setSubject(email);
         Date now = new Date();
         Date validity = new Date(now.getTime() + validityInMilliseconds);
@@ -52,20 +63,49 @@ public class JwtTokenProvider {
         }
     }
 
-    public Cookie createCookie(String token) {
-        Cookie cookie = new Cookie("jwt", token);
-        cookie.setHttpOnly(true);
-        cookie.setSecure(false); // Change to true in production with HTTPS
-        cookie.setPath("/");
-        cookie.setMaxAge((int) (validityInMilliseconds / 1000));
-        return cookie;
+    public org.springframework.http.ResponseCookie createAccessTokenCookie(String token) {
+        return org.springframework.http.ResponseCookie.from("accessToken", token)
+                .httpOnly(true)
+                .secure(false)
+                .path("/")
+                .maxAge(accessTokenValidity / 1000)
+                .sameSite("Lax")
+                .build();
     }
 
-    public String resolveToken(HttpServletRequest request) {
+    public org.springframework.http.ResponseCookie createRefreshTokenCookie(String token) {
+        return org.springframework.http.ResponseCookie.from("refreshToken", token)
+                .httpOnly(true)
+                .secure(false)
+                .path("/")
+                .maxAge(refreshTokenValidity / 1000)
+                .sameSite("Lax")
+                .build();
+    }
+
+    public org.springframework.http.ResponseCookie createLogoutCookie(String name) {
+        return org.springframework.http.ResponseCookie.from(name, "")
+                .httpOnly(true)
+                .secure(false)
+                .path("/")
+                .maxAge(0)
+                .sameSite("Lax")
+                .build();
+    }
+
+    public String resolveAccessToken(HttpServletRequest request) {
+        return resolveCookie(request, "accessToken");
+    }
+
+    public String resolveRefreshToken(HttpServletRequest request) {
+        return resolveCookie(request, "refreshToken");
+    }
+
+    private String resolveCookie(HttpServletRequest request, String name) {
         Cookie[] cookies = request.getCookies();
         if (cookies != null) {
             for (Cookie cookie : cookies) {
-                if ("jwt".equals(cookie.getName())) {
+                if (name.equals(cookie.getName())) {
                     return cookie.getValue();
                 }
             }

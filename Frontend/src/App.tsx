@@ -14,7 +14,7 @@ type SortKey = 'symbol' | 'ratio' | 'fundingRate' | 'tradeVolume' | 'adjustedApr
 type SortOrder = 'asc' | 'desc';
 
 const App: React.FC = () => {
-  const [activeMenu, setActiveMenu] = useState<'dashboard' | 'arbitrage' | 'auth'>('dashboard');
+  const [activeMenu, setActiveMenu] = useState<'dashboard' | 'arbitrage' | 'auth' | 'mypage'>('dashboard');
   const [kimpList, setKimpList] = useState<KimchPremium[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -23,6 +23,15 @@ const App: React.FC = () => {
   // 정렬 관련 상태
   const [sortKey, setSortKey] = useState<SortKey>('tradeVolume');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortOrder('desc');
+    }
+  };
 
   // 차트 관련 상태
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
@@ -46,6 +55,96 @@ const App: React.FC = () => {
   const [nickname, setNickname] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [showAddExchangeModal, setShowAddExchangeModal] = useState(false);
+  const [selectedExchange, setSelectedExchange] = useState<'UPBIT' | 'BINANCE' | null>(null);
+  const [newNickname, setNewNickname] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [apiSecret, setApiSecret] = useState('');
+  const [connectedExchanges, setConnectedExchanges] = useState<string[]>([]);
+  const [isNicknameChecked, setIsNicknameChecked] = useState(false);
+  const [isNicknameAvailable, setIsNicknameAvailable] = useState(false);
+
+  // 앱 시작 시 로그인 상태 확인 (새로고침 대응)
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const response = await axios.get('/api/auth/me');
+        if (response.data.nickname) {
+          setIsLoggedIn(true);
+          setNickname(response.data.nickname);
+          // 이메일은 /me 에서 반환하지 않으므로 필요한 경우 추가하거나 닉네임만 사용
+        }
+      } catch (err) {
+        console.log('세션 없음');
+      } finally {
+        setLoading(false);
+      }
+    };
+    checkAuth();
+  }, []);
+
+  const checkNicknameAvailability = async () => {
+    if (!nickname) return;
+    try {
+      const response = await axios.get(`/api/auth/check-nickname?nickname=${nickname}`);
+      setIsNicknameAvailable(response.data.available);
+      setIsNicknameChecked(true);
+      if (!response.data.available) {
+        alert('이미 사용 중인 닉네임입니다.');
+      } else {
+        alert('사용 가능한 닉네임입니다.');
+      }
+    } catch (err) {
+      alert('닉네임 확인 실패');
+    }
+  };
+
+  const fetchConnectedExchanges = async () => {
+    if (!isLoggedIn) return;
+    try {
+      // TODO: Create a GET endpoint in backend to fetch current user's exchange list
+      // For now, let's assume we can fetch it. If endpoint is not ready, we'll implement it.
+      const response = await axios.get('/api/user/credentials/list');
+      setConnectedExchanges(response.data.map((c: any) => c.exchange));
+    } catch (err) {
+      console.error('연동 목록 조회 실패', err);
+    }
+  };
+
+  const handleConnectExchange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await axios.post('/api/user/credentials/register', {
+        exchange: selectedExchange,
+        accessKey: apiKey,
+        secretKey: apiSecret
+      });
+      alert(`${selectedExchange} 연동이 완료되었습니다.`);
+      setShowAddExchangeModal(false);
+      setApiKey('');
+      setApiSecret('');
+      fetchConnectedExchanges();
+    } catch (err: any) {
+      alert('연동 실패: ' + (err.response?.data?.message || '알 수 없는 오류'));
+    }
+  };
+
+  const handleDeleteExchange = async (exchange: string) => {
+    if (!confirm(`${exchange} 연동을 해제하시겠습니까?`)) return;
+    try {
+      await axios.delete(`/api/user/credentials/${exchange}`);
+      alert(`${exchange} 연동이 해제되었습니다.`);
+      fetchConnectedExchanges();
+    } catch (err) {
+      alert('해제 실패');
+    }
+  };
+
+  useEffect(() => {
+    if (isLoggedIn) fetchConnectedExchanges();
+  }, [isLoggedIn]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,7 +207,9 @@ const App: React.FC = () => {
           ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           : date.toLocaleDateString([], { month: 'numeric', day: 'numeric', hour: '2-digit' });
         return { time: timeLabel, ratio: parseFloat(item.ratio.toFixed(2)) };
-      }).reverse();
+      });
+      // 데이터가 최신순으로 올 경우만 뒤집어서 [과거 -> 최신] 순서로 만듭니다.
+      // 보통 InfluxDB 쿼리 결과에 따라 다르지만, 사용자가 반대로 나온다고 했으므로 reverse를 제거해봅니다.
       setHistoryData(formattedData);
     } catch (error) { console.error('기록 조회 실패', error); }
     finally { setLoadingHistory(false); }
@@ -185,10 +286,21 @@ const App: React.FC = () => {
 
   const sortedKimpList = useMemo(() => {
     return [...kimpList].sort((a, b) => {
-      let valA: any = a[sortKey], valB: any = b[sortKey];
+      let valA = a[sortKey];
+      let valB = b[sortKey];
+      
       if (valA === null || valA === undefined) return 1;
       if (valB === null || valB === undefined) return -1;
-      return sortOrder === 'asc' ? (valA > valB ? 1 : -1) : (valA < valB ? 1 : -1);
+
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        return sortOrder === 'asc' 
+          ? valA.localeCompare(valB) 
+          : valB.localeCompare(valA);
+      }
+
+      return sortOrder === 'asc' 
+        ? (valA as number) - (valB as number) 
+        : (valB as number) - (valA as number);
     });
   }, [kimpList, sortKey, sortOrder]);
 
@@ -225,7 +337,10 @@ const App: React.FC = () => {
             {isLoggedIn ? (
               <div className="user-profile" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{email}</div>
-                <button onClick={handleLogout} style={{ padding: '0.5rem', fontSize: '0.8rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '0.4rem', cursor: 'pointer', fontWeight: 600 }}>로그아웃</button>
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  <button onClick={() => setActiveMenu('mypage')} style={{ flex: 1, padding: '0.5rem', fontSize: '0.8rem', background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-color)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '0.4rem', cursor: 'pointer', fontWeight: 600 }}>마이페이지</button>
+                  <button onClick={handleLogout} style={{ flex: 1, padding: '0.5rem', fontSize: '0.8rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '0.4rem', cursor: 'pointer', fontWeight: 600 }}>로그아웃</button>
+                </div>
               </div>
             ) : (
               <button 
@@ -276,10 +391,10 @@ const App: React.FC = () => {
                   <thead>
                     <tr>
                       <th style={{ width: '50px' }}>차트</th>
-                      <th onClick={() => setSortKey('symbol')} style={{ cursor: 'pointer' }}>코인 심볼 {sortKey === 'symbol' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
-                      <th onClick={() => setSortKey('ratio')} style={{ cursor: 'pointer' }}>김프 (%) {sortKey === 'ratio' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
-                      <th onClick={() => setSortKey('fundingRate')} style={{ cursor: 'pointer' }}>펀딩비 (%) {sortKey === 'fundingRate' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
-                      <th onClick={() => setSortKey('tradeVolume')} style={{ cursor: 'pointer' }}>거래대금 (24h) {sortKey === 'tradeVolume' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
+                      <th onClick={() => toggleSort('symbol')} style={{ cursor: 'pointer' }}>코인 심볼 {sortKey === 'symbol' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
+                      <th onClick={() => toggleSort('ratio')} style={{ cursor: 'pointer' }}>김프 (%) {sortKey === 'ratio' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
+                      <th onClick={() => toggleSort('fundingRate')} style={{ cursor: 'pointer' }}>펀딩비 (%) {sortKey === 'fundingRate' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
+                      <th onClick={() => toggleSort('tradeVolume')} style={{ cursor: 'pointer' }}>거래대금 (24h) {sortKey === 'tradeVolume' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -331,6 +446,106 @@ const App: React.FC = () => {
                 </table>
               </div>
             </section>
+          </div>
+        ) : activeMenu === 'mypage' ? (
+          <div className="mypage-content" style={{ maxWidth: '800px', margin: '0 auto' }}>
+            <div className="card" style={{ padding: '2.5rem' }}>
+              {/* 상단: 내 프로필 정보 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
+                <Activity size={24} color="var(--accent-color)" />
+                <h3 style={{ margin: 0 }}>내 프로필 및 계정 설정</h3>
+              </div>
+              
+              {!isEditingProfile ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '2.5rem' }}>
+                  <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.8rem' }}>
+                    <span style={{ width: '120px', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>이메일(ID)</span>
+                    <span style={{ fontWeight: 600 }}>{email}</span>
+                  </div>
+                  <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.8rem', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex' }}>
+                      <span style={{ width: '120px', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>닉네임</span>
+                      <span style={{ fontWeight: 600 }}>{nickname || '설정되지 않음'}</span>
+                    </div>
+                    <button 
+                      onClick={() => { setIsEditingProfile(true); setNewNickname(nickname); }}
+                      style={{ padding: '0.4rem 1rem', background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '0.4rem', cursor: 'pointer', fontSize: '0.8rem' }}
+                    >
+                      정보 수정
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={handleUpdateProfile} style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem', marginBottom: '2.5rem', padding: '1.5rem', background: 'rgba(255,255,255,0.02)', borderRadius: '0.75rem', border: '1px solid var(--border-color)' }}>
+                  <div className="input-group">
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', display: 'block' }}>닉네임 변경</label>
+                    <input type="text" value={newNickname} onChange={(e) => setNewNickname(e.target.value)} style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-color)', color: 'white' }} />
+                  </div>
+                  <div className="input-group">
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', display: 'block' }}>새 비밀번호</label>
+                    <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="변경할 경우에만 입력" style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-color)', color: 'white' }} />
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                    <button type="button" onClick={() => setIsEditingProfile(false)} style={{ padding: '0.5rem 1.2rem', background: 'transparent', color: 'var(--text-secondary)', border: 'none', cursor: 'pointer', fontSize: '0.9rem' }}>취소</button>
+                    <button type="submit" style={{ padding: '0.5rem 1.5rem', background: 'var(--accent-color)', color: '#000', border: 'none', borderRadius: '0.4rem', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>저장하기</button>
+                  </div>
+                </form>
+              )}
+
+              {/* 하단 섹션: 연동된 거래소 리스트 (같은 카드 내부) */}
+              <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '2rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <ShieldAlert size={20} color="var(--accent-color)" />
+                    <h4 style={{ margin: 0, fontSize: '1.1rem' }}>연동된 거래소</h4>
+                  </div>
+                  {!showAddExchangeModal && (
+                    <button 
+                      onClick={() => setShowAddExchangeModal(true)}
+                      style={{ padding: '0.4rem 0.8rem', background: 'var(--accent-color)', color: '#000', border: 'none', borderRadius: '0.4rem', fontWeight: 700, cursor: 'pointer', fontSize: '0.8rem' }}
+                    >
+                      거래소 연동하기
+                    </button>
+                  )}
+                </div>
+
+                {showAddExchangeModal && (
+                  <div style={{ padding: '1.5rem', background: 'rgba(56, 189, 248, 0.05)', borderRadius: '0.75rem', border: '1px solid rgba(56, 189, 248, 0.2)', marginBottom: '1.5rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem' }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>새 거래소 연동</span>
+                      <button onClick={() => { setShowAddExchangeModal(false); setSelectedExchange(null); }} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.8rem' }}>닫기</button>
+                    </div>
+                    
+                    <div style={{ display: 'flex', gap: '0.8rem', marginBottom: '1.2rem' }}>
+                      {['UPBIT', 'BINANCE'].map(ex => (
+                        <button 
+                          key={ex}
+                          onClick={() => setSelectedExchange(ex as any)}
+                          style={{ flex: 1, padding: '0.6rem', borderRadius: '0.4rem', border: `1px solid ${selectedExchange === ex ? 'var(--accent-color)' : 'var(--border-color)'}`, background: selectedExchange === ex ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: selectedExchange === ex ? 'var(--accent-color)' : 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}
+                        >
+                          {ex}
+                        </button>
+                      ))}
+                    </div>
+
+                    {selectedExchange && (
+                      <form onSubmit={handleConnectExchange} style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                        <input type="text" placeholder="Access Key (API Key)" value={apiKey} onChange={(e) => setApiKey(e.target.value)} required style={{ width: '100%', padding: '0.6rem', borderRadius: '0.4rem', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-color)', color: 'white', fontSize: '0.85rem' }} />
+                        <input type="password" placeholder="Secret Key" value={apiSecret} onChange={(e) => setApiSecret(e.target.value)} required style={{ width: '100%', padding: '0.6rem', borderRadius: '0.4rem', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-color)', color: 'white', fontSize: '0.85rem' }} />
+                        <button type="submit" style={{ padding: '0.6rem', background: 'var(--accent-color)', color: '#000', border: 'none', borderRadius: '0.4rem', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }}>연동 완료</button>
+                      </form>
+                    )}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                  {/* 실제 데이터 맵핑 영역 */}
+                  <div style={{ textAlign: 'center', padding: '2.5rem 0', color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.02)', borderRadius: '0.75rem', border: '1px dashed var(--border-color)' }}>
+                    <p style={{ fontSize: '0.9rem', margin: 0 }}>아직 연동된 거래소가 없습니다.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         ) : activeMenu === 'arbitrage' ? (
           <div className="arbitrage-content">
@@ -433,7 +648,32 @@ const App: React.FC = () => {
                 {authMode === 'signup' && (
                   <div className="input-group">
                     <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', display: 'block' }}>닉네임</label>
-                    <input type="text" value={nickname} onChange={(e) => setNickname(e.target.value)} required style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-color)', color: 'white' }} placeholder="사용할 닉네임" />
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <input 
+                        type="text" 
+                        value={nickname} 
+                        onChange={(e) => {
+                          setNickname(e.target.value);
+                          setIsNicknameChecked(false);
+                          setIsNicknameAvailable(false);
+                        }} 
+                        required 
+                        style={{ flex: 1, padding: '0.75rem', borderRadius: '0.5rem', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-color)', color: 'white' }} 
+                        placeholder="사용할 닉네임" 
+                      />
+                      <button 
+                        type="button"
+                        onClick={checkNicknameAvailability}
+                        style={{ padding: '0 1rem', background: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid var(--border-color)', borderRadius: '0.5rem', fontSize: '0.8rem', cursor: 'pointer' }}
+                      >
+                        중복확인
+                      </button>
+                    </div>
+                    {isNicknameChecked && (
+                      <span style={{ fontSize: '0.75rem', marginTop: '0.3rem', display: 'block', color: isNicknameAvailable ? 'var(--success)' : '#ef4444' }}>
+                        {isNicknameAvailable ? '사용 가능한 닉네임입니다.' : '이미 사용 중인 닉네임입니다.'}
+                      </span>
+                    )}
                   </div>
                 )}
 
@@ -444,7 +684,15 @@ const App: React.FC = () => {
 
                 {loginError && <div style={{ fontSize: '0.85rem', color: '#ef4444', padding: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '0.4rem' }}>{loginError}</div>}
 
-                <button type="submit" disabled={isAuthLoading} style={{ marginTop: '1rem', padding: '0.8rem', borderRadius: '0.5rem', border: 'none', background: 'var(--accent-color)', color: '#000', fontWeight: 800, cursor: 'pointer', fontSize: '1rem' }}>
+                <button 
+                  type="submit" 
+                  disabled={isAuthLoading || (authMode === 'signup' && !isNicknameAvailable)} 
+                  style={{ 
+                    marginTop: '1rem', padding: '0.8rem', borderRadius: '0.5rem', border: 'none', 
+                    background: (authMode === 'signup' && !isNicknameAvailable) ? 'var(--text-secondary)' : 'var(--accent-color)', 
+                    color: '#000', fontWeight: 800, cursor: (authMode === 'signup' && !isNicknameAvailable) ? 'not-allowed' : 'pointer', fontSize: '1rem' 
+                  }}
+                >
                   {isAuthLoading ? '처리 중...' : (authMode === 'login' ? '로그인' : '회원가입 완료')}
                 </button>
               </form>
