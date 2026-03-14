@@ -63,6 +63,17 @@ public class JwtTokenProvider {
         }
     }
 
+    public long getRemainingTimeSeconds(String token) {
+        try {
+            Claims claims = Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token).getBody();
+            long expirationTime = claims.getExpiration().getTime();
+            long currentTime = System.currentTimeMillis();
+            return Math.max(0, (expirationTime - currentTime) / 1000);
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
     public org.springframework.http.ResponseCookie createAccessTokenCookie(String token) {
         return org.springframework.http.ResponseCookie.from("accessToken", token)
                 .httpOnly(true)

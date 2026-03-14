@@ -65,6 +65,17 @@ const App: React.FC = () => {
   const [connectedExchanges, setConnectedExchanges] = useState<string[]>([]);
   const [isNicknameChecked, setIsNicknameChecked] = useState(false);
   const [isNicknameAvailable, setIsNicknameAvailable] = useState(false);
+  const logoutTimerRef = React.useRef<number | null>(null);
+
+  const startLogoutTimer = (seconds: number) => {
+    if (logoutTimerRef.current) window.clearTimeout(logoutTimerRef.current);
+    if (seconds <= 0) return;
+
+    logoutTimerRef.current = window.setTimeout(() => {
+      alert('로그인 세션이 만료되어 로그아웃되었습니다.');
+      handleLogout();
+    }, seconds * 1000);
+  };
 
   // 앱 시작 시 로그인 상태 확인 (새로고침 대응)
   useEffect(() => {
@@ -74,7 +85,9 @@ const App: React.FC = () => {
         if (response.data.nickname) {
           setIsLoggedIn(true);
           setNickname(response.data.nickname);
-          // 이메일은 /me 에서 반환하지 않으므로 필요한 경우 추가하거나 닉네임만 사용
+          if (response.data.expiresIn) {
+            startLogoutTimer(response.data.expiresIn);
+          }
         }
       } catch (err) {
         console.log('세션 없음');
@@ -83,6 +96,7 @@ const App: React.FC = () => {
       }
     };
     checkAuth();
+    return () => { if (logoutTimerRef.current) window.clearTimeout(logoutTimerRef.current); };
   }, []);
 
   const checkNicknameAvailability = async () => {

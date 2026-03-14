@@ -73,11 +73,19 @@ public class AuthController {
     }
 
     @GetMapping("/me")
-    public ResponseEntity<?> getCurrentUser(@AuthenticationPrincipal UserPrincipal userPrincipal) {
+    public ResponseEntity<?> getCurrentUser(@AuthenticationPrincipal UserPrincipal userPrincipal, jakarta.servlet.http.HttpServletRequest request) {
         if (userPrincipal == null) {
             return ResponseEntity.status(401).body("Not authenticated");
         }
-        return ResponseEntity.ok(java.util.Collections.singletonMap("nickname", userPrincipal.getNickname()));
+        
+        String token = jwtTokenProvider.resolveAccessToken(request);
+        long expiresIn = (token != null) ? jwtTokenProvider.getRemainingTimeSeconds(token) : 0;
+        
+        java.util.Map<String, Object> response = new java.util.HashMap<>();
+        response.put("nickname", userPrincipal.getNickname());
+        response.put("expiresIn", expiresIn);
+        
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/check-nickname")
