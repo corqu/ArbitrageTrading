@@ -25,28 +25,13 @@ kimp:
   telegram:
     bot-token: ${BotToken}
     chat-id: ${ChatID}
-  coins:
-    - btc
-    - eth
-    - sol
-    - xrp
-    - doge
-    - ada
-    - avax
-    - dot
-    - trx
-    - link
-    - etc
-    - apt
-    - arb
-    - shib
-    - mask
-    - sei
-    - sui
-    - inj
-    - rndr
-    - near
 
 encryption:
-  secret-key: "12345678901234567890123456789012" # 32 bytes for AES-256
-  iv: "1234567890123456" # 16 bytes for IV
+  secret-key: "your-super-secret-key-32-chars-!" # 32 bytes for AES-256
+  iv: "your-iv-16-chars" # 16 bytes for IV
+
+jwt:
+  token:
+    secret-key: "vmfhaltm-server-secret-key-very-long-and-secure-base64-encoded"
+    access-expire-length: 3600000 # 1 hour
+    refresh-expire-length: 1209600000 # 14 days

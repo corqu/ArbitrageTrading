@@ -10,6 +10,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
 @Service
 @RequiredArgsConstructor
 public class UserCredentialService {
@@ -18,22 +21,36 @@ public class UserCredentialService {
     private final UserRepository userRepository;
     private final EncryptionUtil encryptionUtil;
 
+    @Transactional(readOnly = true)
+    public List<String> getUserCredentials(Long userId) {
+        return userCredentialRepository.findByUserId(userId).stream()
+                .map(UserCredential::getExchange)
+                .collect(Collectors.toList());
+    }
+
     @Transactional
     public Long registerCredential(UserCredentialRequestDto requestDto) {
         User user = userRepository.findById(requestDto.getUserId())
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + requestDto.getUserId()));
 
         // Encrypt keys using EncryptionUtil
-        String encryptedAccessKey = encryptionUtil.encrypt(requestDto.getAccessKey());
-        String encryptedSecretKey = encryptionUtil.encrypt(requestDto.getSecretKey());
+        String encryptedApiKey = encryptionUtil.encrypt(requestDto.getAccessKey());
+        String encryptedApiSecret = encryptionUtil.encrypt(requestDto.getSecretKey());
 
-        UserCredential credential = UserCredential.builder()
-                .user(user)
-                .exchange(requestDto.getExchange())
-                .accessKey(encryptedAccessKey)
-                .secretKey(encryptedSecretKey)
-                .build();
+        UserCredential credential = userCredentialRepository.findByUserAndExchange(user, requestDto.getExchange())
+                .orElse(UserCredential.builder()
+                        .user(user)
+                        .exchange(requestDto.getExchange())
+                        .build());
+        
+        credential.setApiKey(encryptedApiKey);
+        credential.setApiSecret(encryptedApiSecret);
 
         return userCredentialRepository.save(credential).getId();
+    }
+
+    @Transactional
+    public void deleteCredential(Long userId, String exchange) {
+        userCredentialRepository.deleteByUserIdAndExchange(userId, exchange);
     }
 }
