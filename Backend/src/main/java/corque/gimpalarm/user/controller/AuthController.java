@@ -94,17 +94,6 @@ public class AuthController {
         return ResponseEntity.ok(java.util.Collections.singletonMap("available", isAvailable));
     }
 
-    @PostMapping("/secrets")
-    public ResponseEntity<?> saveSecrets(
-            @AuthenticationPrincipal UserPrincipal userPrincipal,
-            @RequestBody SecretRequest request) {
-        if (userPrincipal == null) {
-            return ResponseEntity.status(401).body("Not authenticated");
-        }
-        authService.saveSecrets(userPrincipal.getEmail(), request.getExchange(), request.getApiKey(), request.getApiSecret());
-        return ResponseEntity.ok("Secrets saved successfully");
-    }
-
     @Data
     public static class SignupRequest {
         private String email;
@@ -116,12 +105,5 @@ public class AuthController {
     public static class LoginRequest {
         private String email;
         private String password;
-    }
-
-    @Data
-    public static class SecretRequest {
-        private String exchange;
-        private String apiKey;
-        private String apiSecret;
     }
 }

@@ -1,12 +1,9 @@
 package corque.gimpalarm.user.service;
 
-import corque.gimpalarm.common.util.EncryptionUtil;
 import corque.gimpalarm.common.util.JwtTokenProvider;
 import corque.gimpalarm.user.domain.RefreshToken;
 import corque.gimpalarm.user.domain.User;
-import corque.gimpalarm.user.domain.UserCredential;
 import corque.gimpalarm.user.repository.RefreshTokenRepository;
-import corque.gimpalarm.user.repository.UserCredentialRepository;
 import corque.gimpalarm.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,11 +18,9 @@ import java.time.LocalDateTime;
 public class AuthService {
 
     private final UserRepository userRepository;
-    private final UserCredentialRepository credentialRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
-    private final EncryptionUtil encryptionUtil;
 
     @Value("${jwt.token.refresh-expire-length}")
     private long refreshTokenValidityInMilliseconds;
@@ -107,25 +102,5 @@ public class AuthService {
     public static class TokenResponse {
         String accessToken;
         String refreshToken;
-    }
-
-    @Transactional
-    public void saveSecrets(String email, String exchange, String apiKey, String apiSecret) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        String encryptedApiKey = encryptionUtil.encrypt(apiKey);
-        String encryptedApiSecret = encryptionUtil.encrypt(apiSecret);
-
-        UserCredential credential = credentialRepository.findByUserAndExchange(user, exchange)
-                .orElse(UserCredential.builder()
-                        .user(user)
-                        .exchange(exchange)
-                        .build());
-
-        credential.setApiKey(encryptedApiKey);
-        credential.setApiSecret(encryptedApiSecret);
-
-        credentialRepository.save(credential);
     }
 }

@@ -15,6 +15,34 @@ type SortOrder = 'asc' | 'desc';
 
 const App: React.FC = () => {
   const [activeMenu, setActiveMenu] = useState<'dashboard' | 'arbitrage' | 'auth' | 'mypage'>('dashboard');
+  
+  // URL 경로와 activeMenu 상태 동기화
+  useEffect(() => {
+    const handleLocationChange = () => {
+      const path = window.location.pathname;
+      if (path === '/mypage') setActiveMenu('mypage');
+      else if (path === '/arbitrage') setActiveMenu('arbitrage');
+      else if (path === '/auth') setActiveMenu('auth');
+      else setActiveMenu('dashboard');
+    };
+
+    // 초기 로드 시 경로 확인
+    handleLocationChange();
+
+    // 뒤로가기/앞으로가기 이벤트 리스너
+    window.addEventListener('popstate', handleLocationChange);
+    return () => window.removeEventListener('popstate', handleLocationChange);
+  }, []);
+
+  // activeMenu 변경 시 URL 업데이트 (뒤로가기 지원)
+  const changeMenu = (menu: 'dashboard' | 'arbitrage' | 'auth' | 'mypage') => {
+    if (activeMenu === menu) return;
+    
+    const path = menu === 'dashboard' ? '/' : `/${menu}`;
+    window.history.pushState(null, '', path);
+    setActiveMenu(menu);
+  };
+
   const [kimpList, setKimpList] = useState<KimchPremium[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -167,7 +195,7 @@ const App: React.FC = () => {
       await axios.post('/api/auth/login', { email, password });
       setIsLoggedIn(true);
       setPassword(''); 
-      setActiveMenu('dashboard'); // 로그인 성공 시 대시보드로 이동
+      changeMenu('dashboard'); // 로그인 성공 시 대시보드로 이동
     } catch (err: any) {
       setLoginError(err.response?.data || '로그인 실패');
     } finally {
@@ -197,7 +225,7 @@ const App: React.FC = () => {
   const handleLogout = () => {
     setIsLoggedIn(false);
     setEmail('');
-    setActiveMenu('dashboard');
+    changeMenu('dashboard');
   };
 
   const fetchData = async () => {
@@ -342,8 +370,8 @@ const App: React.FC = () => {
       <nav className="sidebar">
         <div className="sidebar-logo"><TrendingUp color="var(--accent-color)" size={28} /><span>김프알람</span></div>
         <div className="sidebar-menu">
-          <button className={`menu-item ${activeMenu === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveMenu('dashboard')}><LayoutDashboard size={20} /><span>대시보드</span></button>
-          <button className={`menu-item ${activeMenu === 'arbitrage' ? 'active' : ''}`} onClick={() => setActiveMenu('arbitrage')}><Repeat size={20} /><span>차익거래</span></button>
+          <button className={`menu-item ${activeMenu === 'dashboard' ? 'active' : ''}`} onClick={() => changeMenu('dashboard')}><LayoutDashboard size={20} /><span>대시보드</span></button>
+          <button className={`menu-item ${activeMenu === 'arbitrage' ? 'active' : ''}`} onClick={() => changeMenu('arbitrage')}><Repeat size={20} /><span>차익거래</span></button>
         </div>
         <div className="sidebar-footer">
           <div className="auth-section" style={{ padding: '1rem', borderTop: '1px solid var(--border-color)', marginBottom: '0.5rem' }}>
@@ -351,13 +379,13 @@ const App: React.FC = () => {
               <div className="user-profile" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{email}</div>
                 <div style={{ display: 'flex', gap: '0.4rem' }}>
-                  <button onClick={() => setActiveMenu('mypage')} style={{ flex: 1, padding: '0.5rem', fontSize: '0.8rem', background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-color)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '0.4rem', cursor: 'pointer', fontWeight: 600 }}>마이페이지</button>
+                  <button onClick={() => changeMenu('mypage')} style={{ flex: 1, padding: '0.5rem', fontSize: '0.8rem', background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-color)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '0.4rem', cursor: 'pointer', fontWeight: 600 }}>마이페이지</button>
                   <button onClick={handleLogout} style={{ flex: 1, padding: '0.5rem', fontSize: '0.8rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '0.4rem', cursor: 'pointer', fontWeight: 600 }}>로그아웃</button>
                 </div>
               </div>
             ) : (
               <button 
-                onClick={() => setActiveMenu('auth')} 
+                onClick={() => changeMenu('auth')} 
                 style={{ width: '100%', padding: '0.6rem', fontSize: '0.85rem', background: 'var(--accent-color)', color: '#000', border: 'none', borderRadius: '0.4rem', cursor: 'pointer', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
               >
                 로그인 / 회원가입
