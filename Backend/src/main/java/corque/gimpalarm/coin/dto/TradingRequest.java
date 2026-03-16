@@ -10,5 +10,7 @@ public class TradingRequest {
     private double amountKrw;        // 투자할 총 금액 (원화 기준)
     private Double limitPrice;       // 지정가 매수 가격 (null이면 현재가/시장가)
     private int leverage;            // 사용할 레버리지 배수
-    private String action;           // START (진입), STOP (청산/종료)
+    private String action;           // START (지정가 진입), STOP (중단), START_AUTO (자동 감시 진입)
+    private Double entryKimp;        // 목표 진입 김프 (%)
+    private Double exitKimp;         // 목표 탈출 김프 (%)
 }

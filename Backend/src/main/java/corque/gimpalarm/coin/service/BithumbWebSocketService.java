@@ -38,36 +38,46 @@ public class BithumbWebSocketService {
             @Override
             public void afterConnectionEstablished(WebSocketSession session) throws Exception {
                 // 빗썸에 상장되어 있으면서 해외 거래소 짝이 있는 코인만 필터링
-                String symbols = coinRepository.findAll().stream()
+                List<String> symbols = coinRepository.findAll().stream()
                         .filter(c -> c.isBithumb())
                         .map(c -> "\"" + c.getSymbol().toUpperCase() + "_KRW\"")
-                        .collect(Collectors.joining(", "));
+                        .collect(Collectors.toList());
 
                 if (symbols.isEmpty()) {
                     log.warn("빗썸 구독 대상 코인이 없습니다.");
                     return;
                 }
 
-                String subscribeMessage = String.format("{\"type\":\"ticker\", \"symbols\": [%s], \"tickTypes\": [\"1M\"]}"
-                        , symbols);
+                // 모든 코인을 하나의 리스트로 묶어서 단 한 번의 메시지로 전송 (구독 덮어쓰기 방지)
+                String allSymbols = String.join(", ", symbols);
+                String subscribeMessage = String.format("{\"type\":\"ticker\", \"symbols\": [%s], \"tickTypes\": [\"24H\"]}", allSymbols);
+                
                 session.sendMessage(new TextMessage(subscribeMessage));
-                log.info("빗썸 소켓 구독: {} 종", symbols.split(",").length);
+                log.info("빗썸 소켓 구독 완료: 총 {}종 (한 번의 메시지로 전송)", symbols.size());
             }
 
             @Override
-            protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
-                BithumbTickerDto ticker = objectMapper.readValue(message.getPayload(), BithumbTickerDto.class);
-                
-                if (ticker.getContent() != null && ticker.getContent().getClosePrice() != null) {
-                    double price = Double.parseDouble(ticker.getContent().getClosePrice());
-                    String symbol = ticker.getContent().getSymbol().split("_")[0];
-                    String key = "BT_" + symbol;
-                    priceManager.updatePrice(key, price);
+            protected void handleTextMessage(WebSocketSession session, TextMessage message) {
+                try {
+                    BithumbTickerDto ticker = objectMapper.readValue(message.getPayload(), BithumbTickerDto.class);
                     
-                    if (ticker.getContent().getValue() != null) {
-                        double volume = Double.parseDouble(ticker.getContent().getValue());
-                        priceManager.updateTradeVolume(key, volume);
+                    if (ticker.getContent() != null && ticker.getContent().getClosePrice() != null) {
+                        double price = Double.parseDouble(ticker.getContent().getClosePrice());
+                        
+                        // 가격이 0 이하인 비정상 데이터는 무시
+                        if (price <= 0) return;
+
+                        String symbol = ticker.getContent().getSymbol().split("_")[0];
+                        String key = "BT_" + symbol;
+                        priceManager.updatePrice(key, price);
+                        
+                        if (ticker.getContent().getValue() != null) {
+                            double volume = Double.parseDouble(ticker.getContent().getValue());
+                            priceManager.updateTradeVolume(key, volume);
+                        }
                     }
+                } catch (Exception e) {
+                    // 파싱 에러 등은 로그를 남기지 않거나 디버그용으로만 사용 (메시지가 너무 많음)
                 }
             }
 

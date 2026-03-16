@@ -34,7 +34,7 @@ const App: React.FC = () => {
   const [newPassword, setNewPassword] = useState('');
   const [connectedExchanges, setConnectedExchanges] = useState<string[]>([]);
   const [showAddExchangeModal, setShowAddExchangeModal] = useState(false);
-  const [selectedExchange, setSelectedExchange] = useState<'UPBIT' | 'BINANCE' | null>(null);
+  const [selectedExchange, setSelectedExchange] = useState<'UPBIT' | 'BITHUMB' | 'BINANCE' | 'BYBIT' | null>(null);
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
   const [isNicknameChecked, setIsNicknameChecked] = useState(false);
@@ -209,6 +209,8 @@ const App: React.FC = () => {
                 setSelectedDomesticExchange={setSelectedDomesticExchange}
                 selectedForeignExchange={selectedForeignExchange}
                 setSelectedForeignExchange={setSelectedForeignExchange}
+                isLoggedIn={isLoggedIn}
+                connectedExchanges={connectedExchanges}
               />
             } />
             <Route path="/auth" element={

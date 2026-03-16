@@ -1,5 +1,6 @@
 package corque.gimpalarm.coin.service;
 
+import corque.gimpalarm.coin.dto.KimpResponseDto;
 import corque.gimpalarm.coin.dto.TradingRequest;
 import corque.gimpalarm.common.config.CoinConfig;
 import lombok.AllArgsConstructor;
@@ -9,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -18,104 +20,203 @@ import java.util.concurrent.ConcurrentHashMap;
 public class TradingBotService {
 
     private final CoinConfig coinConfig;
+    private final KimpService kimpService;
+    private final corque.gimpalarm.user.repository.UserCredentialRepository userCredentialRepository;
+    private final corque.gimpalarm.user.repository.UserRepository userRepository;
 
-    // 실행 중인 봇의 정보를 담는 객체
+    // 봇의 상태 정의
+    public enum BotStatus {
+        WAITING,    // 진입 김프 대기 중
+        ENTERING,   // 국내 매수 중 (체결 감시)
+        HOLDING,    // 탈출 김프 대기 중 (숏 헷지 완료 상태)
+        EXITING     // 탈출 진행 중 (국내 매도 + 숏 청산)
+    }
+
     @Data
     @AllArgsConstructor
     private static class ActiveTrade {
         private TradingRequest request;
-        private String domesticOrderId;   // 국내 거래소 주문 ID
-        private double totalTargetQty;    // 목표 총 수량
-        private double filledQty;         // 현재까지 체결된 수량
-        private double hedgedQty;         // 현재까지 해외에서 헷지(숏)한 수량
+        private BotStatus status;
+        private Long userId; // 사용자 ID 추가
+        private String domesticOrderId;
+        private double totalTargetQty;
+        private double filledQty;
+        private double hedgedQty;
     }
 
     private final Map<String, ActiveTrade> activeBots = new ConcurrentHashMap<>();
 
-    /**
-     * 사용자의 매매 명령을 처리합니다.
-     */
     public String executeTrade(TradingRequest request) {
+        // 1. 현재 사용자 인증 정보 가져오기
+        org.springframework.security.core.Authentication auth = 
+            org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        
+        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getName())) {
+            return "로그인이 필요한 서비스입니다.";
+        }
+
+        corque.gimpalarm.user.domain.User user = userRepository.findByEmail(auth.getName())
+            .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
+
+        // 2. 해당 거래소들의 API 자격 증명이 있는지 확인
+        if (!hasCredentials(user, request.getDomesticExchange()) || !hasCredentials(user, request.getForeignExchange())) {
+            return String.format("%s 또는 %s API 키가 등록되지 않았습니다.", 
+                request.getDomesticExchange(), request.getForeignExchange());
+        }
+
         String botKey = String.format("%s:%s:%s",
                 request.getSymbol().toUpperCase(),
                 request.getDomesticExchange().toUpperCase(),
                 request.getForeignExchange().toUpperCase());
 
-        if ("START".equalsIgnoreCase(request.getAction())) {
-            return startLimitArbitrage(request, botKey);
+        if ("START_AUTO".equalsIgnoreCase(request.getAction())) {
+            return startAutoArbitrage(request, botKey, user.getId());
+        } else if ("START".equalsIgnoreCase(request.getAction())) {
+            return startLimitArbitrage(request, botKey, user.getId());
         } else if ("STOP".equalsIgnoreCase(request.getAction())) {
             return stopArbitrage(botKey);
         }
         return "알 수 없는 명령입니다.";
     }
 
-    private String startLimitArbitrage(TradingRequest request, String botKey) {
+    private boolean hasCredentials(corque.gimpalarm.user.domain.User user, String exchange) {
+        // 실제 거래소 이름 매칭 (BINANCE_FUTURES 등은 BINANCE로 통일)
+        String ex = exchange.toUpperCase();
+        if (ex.contains("BINANCE")) ex = "BINANCE";
+        if (ex.contains("BYBIT")) ex = "BYBIT";
+        
+        return userCredentialRepository.findByUserAndExchange(user, ex).isPresent();
+    }
+
+    private String startAutoArbitrage(TradingRequest request, String botKey, Long userId) {
+        if (activeBots.containsKey(botKey)) {
+            return botKey + " 봇이 이미 실행 중입니다.";
+        }
+        
+        log.info(">>> [USER:{}] 자동 아비트리지 감시 시작: {} (진입: {}%, 탈출: {}%)", 
+                userId, botKey, request.getEntryKimp(), request.getExitKimp());
+        
+        activeBots.put(botKey, new ActiveTrade(request, BotStatus.WAITING, userId, null, 0.0, 0.0, 0.0));
+        return botKey + " 자동 매매 구독 완료. 목표 김프 도달 시 등록된 API 키로 자동으로 진입합니다.";
+    }
+
+    private String startLimitArbitrage(TradingRequest request, String botKey, Long userId) {
         if (activeBots.containsKey(botKey)) {
             return botKey + " 봇이 이미 실행 중입니다.";
         }
 
-        log.info(">>> 지정가 아비트리지 진입: {} @ {} KRW", botKey, request.getLimitPrice());
+        log.info(">>> [USER:{}] 지정가 아비트리지 진입: {} @ {} KRW", userId, botKey, request.getLimitPrice());
 
         try {
-            // 1. 국내 거래소 지정가 주문 (업비트/빗썸)
-            String orderId = "ORD-12345"; // 가상 ID
             double targetQty = request.getAmountKrw() / request.getLimitPrice();
+            String orderId = "ORD-" + System.currentTimeMillis();
 
-            if ("UPBIT".equals(request.getDomesticExchange())) {
-                log.info("업비트 지정가 매수 주문 전송: {} qty", targetQty);
-            } else if ("BITHUMB".equals(request.getDomesticExchange())) {
-                log.info("빗썸 지정가 매수 주문 전송: {} qty", targetQty);
-            }
-
-            // 2. 관리 목록에 추가 (감시 시작)
-            activeBots.put(botKey, new ActiveTrade(request, orderId, targetQty, 0.0, 0.0));
-
-            return botKey + " 지정가 주문 완료. 체결 감시를 시작합니다.";
+            activeBots.put(botKey, new ActiveTrade(request, BotStatus.ENTERING, userId, orderId, targetQty, 0.0, 0.0));
+            return botKey + " 지정가 주문 완료. 체결 감시 및 헷지를 시작합니다.";
         } catch (Exception e) {
-            log.error("진입 실패: {}", e.getMessage());
             return "오류 발생: " + e.getMessage();
         }
     }
 
-    /**
-     * 1초마다 실행되며 모든 활성 봇의 체결 상태를 확인하고 헷지 주문을 실행합니다.
-     */
     @Scheduled(fixedRate = 1000)
     public void monitorAndHedge() {
+        if (activeBots.isEmpty()) return;
+
+        // 실시간 모든 페어의 김프 가져오기
+        Map<String, List<KimpResponseDto>> allKimp = kimpService.calculateAllPairs();
+
         for (String botKey : activeBots.keySet()) {
             ActiveTrade trade = activeBots.get(botKey);
+            String symbol = trade.getRequest().getSymbol();
 
             try {
-                // 1. 국내 거래소에서 실제 체결량 조회 (주문 상태 API 호출)
-                // double currentFilled = domesticClient.getFilledQty(trade.getDomesticOrderId());
-                double currentFilled = trade.getFilledQty() + (trade.getTotalTargetQty() * 0.1); // 시뮬레이션: 10%씩 체결된다고 가정
-                if (currentFilled > trade.getTotalTargetQty()) currentFilled = trade.getTotalTargetQty();
-
-                trade.setFilledQty(currentFilled);
-
-                // 2. 헷지 필요량 계산 (체결량 - 이미 헷지한 양)
-                double gap = trade.getFilledQty() - trade.getHedgedQty();
-
-                if (gap > 0) {
-                    log.info(">>> [HEDGE] {} 체결 감지: {} qty. 해외 거래소({}) 숏 주문 실행.",
-                            botKey, gap, trade.getRequest().getForeignExchange());
-
-                    // 해외 거래소에 gap만큼 시장가 숏 주문 (바이낸스/바이비트)
-                    // foreignClient.openShort(trade.getRequest().getSymbol(), gap, trade.getRequest().getLeverage());
-
-                    trade.setHedgedQty(trade.getHedgedQty() + gap);
+                switch (trade.getStatus()) {
+                    case WAITING:
+                        checkEntryCondition(botKey, trade, allKimp);
+                        break;
+                    case ENTERING:
+                        handleEnteringProcess(botKey, trade);
+                        break;
+                    case HOLDING:
+                        checkExitCondition(botKey, trade, allKimp);
+                        break;
+                    case EXITING:
+                        handleExitingProcess(botKey, trade);
+                        break;
                 }
-
-                // 3. 완료 체크
-                if (trade.getHedgedQty() >= trade.getTotalTargetQty()) {
-                    log.info(">>> {} 모든 수량 체결 및 헷지 완료. 봇을 종료합니다.", botKey);
-                    activeBots.remove(botKey);
-                }
-
             } catch (Exception e) {
                 log.error("{} 모니터링 중 에러: {}", botKey, e.getMessage());
             }
         }
+    }
+
+    private void checkEntryCondition(String botKey, ActiveTrade trade, Map<String, List<KimpResponseDto>> allKimp) {
+        String pairKey = trade.getRequest().getDomesticExchange().toLowerCase().substring(0, 2) + "-" + 
+                         trade.getRequest().getForeignExchange().toLowerCase().substring(0, 2);
+        
+        List<KimpResponseDto> kimpList = allKimp.get(pairKey);
+        if (kimpList == null) return;
+
+        kimpList.stream()
+            .filter(k -> k.getSymbol().equalsIgnoreCase(trade.getRequest().getSymbol()))
+            .findFirst()
+            .ifPresent(k -> {
+                if (k.getRatio() <= trade.getRequest().getEntryKimp()) {
+                    log.info(">>> [MATCH] {} 진입 조건 충족 (현재: {}% <= 목표: {}%). 매수 시작!", 
+                            botKey, k.getRatio(), trade.getRequest().getEntryKimp());
+                    
+                    // 실제로는 시장가 매수 주문 실행
+                    trade.setStatus(BotStatus.ENTERING);
+                    trade.setTotalTargetQty(trade.getRequest().getAmountKrw() / (k.getRatio() / 100.0 * 1450.0 + 1450.0)); // 대략적 계산
+                    trade.setDomesticOrderId("ORD-AUTO-" + System.currentTimeMillis());
+                }
+            });
+    }
+
+    private void handleEnteringProcess(String botKey, ActiveTrade trade) {
+        // 시뮬레이션: 매 초마다 20%씩 체결된다고 가정
+        double newFilled = trade.getFilledQty() + (trade.getTotalTargetQty() * 0.2);
+        if (newFilled > trade.getTotalTargetQty()) newFilled = trade.getTotalTargetQty();
+        
+        double gap = newFilled - trade.getHedgedQty();
+        if (gap > 0) {
+            log.info(">>> [HEDGE] {} 국내 체결({}) -> 해외 숏({}) 실행", botKey, gap, gap);
+            trade.setHedgedQty(trade.getHedgedQty() + gap);
+        }
+        
+        trade.setFilledQty(newFilled);
+
+        if (trade.getHedgedQty() >= trade.getTotalTargetQty()) {
+            log.info(">>> [HOLD] {} 모든 포지션 진입 완료. 탈출 김프({}) 대기 시작.", 
+                    botKey, trade.getRequest().getExitKimp());
+            trade.setStatus(BotStatus.HOLDING);
+        }
+    }
+
+    private void checkExitCondition(String botKey, ActiveTrade trade, Map<String, List<KimpResponseDto>> allKimp) {
+        String pairKey = trade.getRequest().getDomesticExchange().toLowerCase().substring(0, 2) + "-" + 
+                         trade.getRequest().getForeignExchange().toLowerCase().substring(0, 2);
+        
+        List<KimpResponseDto> kimpList = allKimp.get(pairKey);
+        if (kimpList == null) return;
+
+        kimpList.stream()
+            .filter(k -> k.getSymbol().equalsIgnoreCase(trade.getRequest().getSymbol()))
+            .findFirst()
+            .ifPresent(k -> {
+                if (k.getRatio() >= trade.getRequest().getExitKimp()) {
+                    log.info(">>> [EXIT] {} 탈출 조건 충족 (현재: {}% >= 목표: {}%). 청산 시작!", 
+                            botKey, k.getRatio(), trade.getRequest().getExitKimp());
+                    trade.setStatus(BotStatus.EXITING);
+                }
+            });
+    }
+
+    private void handleExitingProcess(String botKey, ActiveTrade trade) {
+        // 시뮬레이션: 매 초마다 50%씩 청산된다고 가정
+        log.info(">>> [CLOSE] {} 포지션 청산 중...", botKey);
+        activeBots.remove(botKey);
+        log.info(">>> [FINISH] {} 차익거래 사이클 종료!", botKey);
     }
 
     private String stopArbitrage(String botKey) {

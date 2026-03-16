@@ -27,15 +27,16 @@ public class KimpService {
     private static final double SLIPPAGE = 0.001;         // 예상 슬리피지 (0.1%)
 
     public Map<String, List<KimpResponseDto>> calculateAllPairs() {
-        Double usdKrw = priceManager.getCurrentUsdKrw();
-        Map<String, List<KimpResponseDto>> result = new HashMap<>();
+        Double currentUsdKrw = priceManager.getCurrentUsdKrw();
         
+        // 환율 데이터가 없으면 초기화를 보류하거나 기본값 사용
+        double usdKrw = (currentUsdKrw == null || currentUsdKrw <= 0) ? 1450.0 : currentUsdKrw;
+
+        Map<String, List<KimpResponseDto>> result = new HashMap<>();
         result.put("ub-bn", new ArrayList<>());
         result.put("ub-bb", new ArrayList<>());
         result.put("bt-bn", new ArrayList<>());
         result.put("bt-bb", new ArrayList<>());
-
-        if (usdKrw == null || usdKrw == 0) return result;
 
         priceManager.getAllPrices().keySet().stream()
             .filter(key -> key.startsWith("UB_") || key.startsWith("BT_"))
@@ -45,7 +46,7 @@ public class KimpService {
                 Double ubPrice = priceManager.getPrice("UB_" + symbol);
                 Double btPrice = priceManager.getPrice("BT_" + symbol);
                 Double bnPrice = priceManager.getPrice("BN_F_" + symbol);
-                Double bbPrice = priceManager.getPrice("BY_" + symbol); // Bybit 가격
+                Double bbPrice = priceManager.getPrice("BY_" + symbol);
 
                 Double fundingRate = priceManager.getFundingRate(symbol);
                 Double ubVolume = priceManager.getTradeVolume("UB_" + symbol);
@@ -53,23 +54,27 @@ public class KimpService {
 
                 // 1. Upbit - Binance
                 if (ubPrice != null && bnPrice != null) {
-                    result.get("ub-bn").add(calculateKimp(symbol, "UPBIT", "BINANCE_FUTURES", 
-                        ubPrice, bnPrice, fundingRate, usdKrw, ubVolume, UPBIT_FEE));
+                    KimpResponseDto kimp = calculateKimp(symbol, "UPBIT", "BINANCE_FUTURES", 
+                        ubPrice, bnPrice, fundingRate, usdKrw, ubVolume, UPBIT_FEE);
+                    if (kimp != null) result.get("ub-bn").add(kimp);
                 }
                 // 2. Upbit - Bybit
                 if (ubPrice != null && bbPrice != null) {
-                    result.get("ub-bb").add(calculateKimp(symbol, "UPBIT", "BYBIT_FUTURES", 
-                        ubPrice, bbPrice, fundingRate, usdKrw, ubVolume, UPBIT_FEE));
+                    KimpResponseDto kimp = calculateKimp(symbol, "UPBIT", "BYBIT_FUTURES", 
+                        ubPrice, bbPrice, fundingRate, usdKrw, ubVolume, UPBIT_FEE);
+                    if (kimp != null) result.get("ub-bb").add(kimp);
                 }
                 // 3. Bithumb - Binance
                 if (btPrice != null && bnPrice != null) {
-                    result.get("bt-bn").add(calculateKimp(symbol, "BITHUMB", "BINANCE_FUTURES", 
-                        btPrice, bnPrice, fundingRate, usdKrw, btVolume, BITHUMB_FEE));
+                    KimpResponseDto kimp = calculateKimp(symbol, "BITHUMB", "BINANCE_FUTURES", 
+                        btPrice, bnPrice, fundingRate, usdKrw, btVolume, BITHUMB_FEE);
+                    if (kimp != null) result.get("bt-bn").add(kimp);
                 }
                 // 4. Bithumb - Bybit
                 if (btPrice != null && bbPrice != null) {
-                    result.get("bt-bb").add(calculateKimp(symbol, "BITHUMB", "BYBIT_FUTURES", 
-                        btPrice, bbPrice, fundingRate, usdKrw, btVolume, BITHUMB_FEE));
+                    KimpResponseDto kimp = calculateKimp(symbol, "BITHUMB", "BYBIT_FUTURES", 
+                        btPrice, bbPrice, fundingRate, usdKrw, btVolume, BITHUMB_FEE);
+                    if (kimp != null) result.get("bt-bb").add(kimp);
                 }
             });
 
@@ -89,6 +94,11 @@ public class KimpService {
                                       Double domesticPrice, Double foreignPrice, 
                                       Double fundingRate, Double usdKrw, Double tradeVolume, double domesticFee) {
         
+        // 국내가 또는 해외가가 0인 경우 계산 제외 (데이터 오류 방지)
+        if (domesticPrice == null || domesticPrice <= 0 || foreignPrice == null || foreignPrice <= 0) {
+            return null;
+        }
+
         double ratio = ((domesticPrice / (foreignPrice * usdKrw)) - 1) * 100;
         Double adjustedApr = null;
         Double liquidationPrice = null;

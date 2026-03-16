@@ -51,6 +51,11 @@ public class ArbitrageBacktestService {
         Instant lastFundingTime = null;
 
         for (KimchPremium current : history) {
+            // [추가] 비정상적인 김프 데이터(-15% 이하 등)는 가격 수집 오류로 간주하고 무시
+            if (current.getRatio() == null || current.getRatio() < -15.0) {
+                continue;
+            }
+
             if (!isHolding) {
                 // 진입: 목표 김프보다 버퍼만큼 더 떨어져야 실제 체결 (호가 경쟁 고려)
                 if (current.getRatio() <= (entryKimp - TICK_BUFFER)) {

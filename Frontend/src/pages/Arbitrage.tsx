@@ -11,12 +11,16 @@ interface ArbitrageProps {
   setSelectedDomesticExchange: (ex: 'UPBIT' | 'BITHUMB') => void;
   selectedForeignExchange: 'BINANCE' | 'BYBIT';
   setSelectedForeignExchange: (ex: 'BINANCE' | 'BYBIT') => void;
+  isLoggedIn: boolean;
+  connectedExchanges: string[];
 }
 
 const Arbitrage: React.FC<ArbitrageProps> = ({ 
   kimpList, 
   selectedDomesticExchange, setSelectedDomesticExchange,
-  selectedForeignExchange, setSelectedForeignExchange
+  selectedForeignExchange, setSelectedForeignExchange,
+  isLoggedIn,
+  connectedExchanges
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
@@ -64,25 +68,57 @@ const Arbitrage: React.FC<ArbitrageProps> = ({
     }
   };
 
-  const handleToggleBot = async (symbol: string, action: 'START' | 'STOP') => {
+  const handleToggleBot = async (symbol: string, action: 'START' | 'STOP' | 'START_AUTO') => {
+    // 1. 로그인 체크
+    if (!isLoggedIn) {
+      if (confirm('로그인이 필요한 서비스입니다. 로그인 페이지로 이동하시겠습니까?')) {
+        window.location.href = '/auth';
+      }
+      return;
+    }
+
+    // 2. API 연동 체크 (STOP 요청은 제외)
+    if (action !== 'STOP') {
+      const domesticMatch = connectedExchanges.includes(selectedDomesticExchange);
+      // BINANCE_FUTURES 등은 BINANCE로 체크
+      const foreignMatch = connectedExchanges.includes(selectedForeignExchange);
+
+      if (!domesticMatch || !foreignMatch) {
+        let missing = !domesticMatch ? selectedDomesticExchange : '';
+        if (!foreignMatch) missing += (missing ? ' 및 ' : '') + selectedForeignExchange;
+        
+        if (confirm(`${missing} API 키가 연동되어 있지 않습니다. 마이페이지에서 연동하시겠습니까?`)) {
+          window.location.href = '/mypage';
+        }
+        return;
+      }
+    }
+
     const key = `${symbol}:${selectedDomesticExchange}:${selectedForeignExchange}`;
     setTradingLoading(prev => ({ ...prev, [key]: true }));
     try {
-      await axios.post('/api/trading/execute', {
+      const response = await axios.post('/api/trading/execute', {
         symbol,
         domesticExchange: selectedDomesticExchange,
         foreignExchange: selectedForeignExchange,
         amountKrw,
         leverage,
+        entryKimp: globalEntryKimp,
+        exitKimp: globalExitKimp,
         action
       });
-      alert(`${symbol} 봇 ${action === 'START' ? '실행' : '중단'} 요청 완료`);
+      alert(response.data);
       fetchBotStatus();
-    } catch (error) {
-      alert('매매 요청 실패');
+    } catch (error: any) {
+      alert(error.response?.data || '매매 요청 실패');
     } finally {
       setTradingLoading(prev => ({ ...prev, [key]: false }));
     }
+  };
+
+  const isBotActive = (symbol: string) => {
+    const key = `${symbol.toUpperCase()}:${selectedDomesticExchange}:${selectedForeignExchange === 'BINANCE' ? 'BINANCE_FUTURES' : 'BYBIT_FUTURES'}`;
+    return !!botStatus[key];
   };
 
   const filteredList = useMemo(() => {
@@ -242,6 +278,29 @@ const Arbitrage: React.FC<ArbitrageProps> = ({
                     </div>
                   </div>
                 ) : null}
+
+                {/* 봇 가동 버튼 추가 */}
+                <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
+                  {isBotActive(rec.symbol) ? (
+                    <button 
+                      className="btn-stop" 
+                      onClick={() => handleToggleBot(rec.symbol, 'STOP')}
+                      disabled={tradingLoading[`${rec.symbol}:${selectedDomesticExchange}:${selectedForeignExchange}`]}
+                      style={{ padding: '0.6rem 2rem', borderRadius: '0.5rem', background: '#ef4444', color: 'white', border: 'none', fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      {tradingLoading[`${rec.symbol}:${selectedDomesticExchange}:${selectedForeignExchange}`] ? <RefreshCw className="animate-spin" size={16} /> : '봇 중단하기'}
+                    </button>
+                  ) : (
+                    <button 
+                      className="btn-subscribe" 
+                      onClick={() => handleToggleBot(rec.symbol, 'START_AUTO')}
+                      disabled={tradingLoading[`${rec.symbol}:${selectedDomesticExchange}:${selectedForeignExchange}`]}
+                      style={{ padding: '0.6rem 2rem', borderRadius: '0.5rem', background: 'var(--accent-color)', color: 'black', border: 'none', fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      {tradingLoading[`${rec.symbol}:${selectedDomesticExchange}:${selectedForeignExchange}`] ? <RefreshCw className="animate-spin" size={16} /> : '이 전략 구독하기 (봇 가동)'}
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>
