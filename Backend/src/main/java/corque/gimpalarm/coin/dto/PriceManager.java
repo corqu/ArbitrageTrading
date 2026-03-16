@@ -17,12 +17,12 @@ public class PriceManager {
         prices.put(key, price);
     }
 
-    public void updateTradeVolume(String symbol, double volume) {
-        tradeVolumes.put(symbol, volume);
+    public void updateTradeVolume(String key, double volume) {
+        tradeVolumes.put(key, volume);
     }
 
-    public Double getTradeVolume(String symbol) {
-        return tradeVolumes.get(symbol);
+    public Double getTradeVolume(String key) {
+        return tradeVolumes.get(key);
     }
 
     public void updateFundingRate(String coin, double rate, long nextTime) {
