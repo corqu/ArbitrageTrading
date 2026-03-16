@@ -34,6 +34,23 @@ public class UserCredentialController {
         return ResponseEntity.ok(userCredentialService.getUserCredentials(userPrincipal.getId()));
     }
 
+    /**
+     * 새로운 거래소 API 키 연동
+     */
+    @PostMapping("/bind")
+    public ResponseEntity<Long> bind(
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
+            @RequestBody UserCredentialRequestDto requestDto) {
+        if (userPrincipal == null) {
+            return ResponseEntity.status(401).build();
+        }
+        
+        requestDto.setUserId(userPrincipal.getId());
+        Long credentialId = userCredentialService.registerCredential(requestDto);
+        
+        return ResponseEntity.ok(credentialId);
+    }
+
     @DeleteMapping("/unbind/{exchange}")
     public ResponseEntity<Void> unbind(
             @AuthenticationPrincipal UserPrincipal userPrincipal,

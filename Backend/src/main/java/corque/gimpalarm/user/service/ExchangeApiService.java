@@ -41,8 +41,9 @@ public class ExchangeApiService {
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("연동되지 않은 거래소입니다: " + exchange));
 
-        String accessKey = encryptionUtil.decrypt(targetCred.getApiKey());
-        String secretKey = encryptionUtil.decrypt(targetCred.getApiSecret());
+        // 키 값의 앞뒤 공백 제거 (복사/붙여넣기 실수 방지)
+        String accessKey = encryptionUtil.decrypt(targetCred.getApiKey()).trim();
+        String secretKey = encryptionUtil.decrypt(targetCred.getApiSecret()).trim();
 
         Object assetInfo = null;
         String upperExchange = exchange.toUpperCase();
@@ -135,29 +136,51 @@ public class ExchangeApiService {
     }
 
     private Map<String, Object> getBithumbAssets(String accessKey, String secretKey) {
-        String endpoint = "/info/balance";
-        long nonce = System.currentTimeMillis();
+        String apiUrl = "https://api.bithumb.com";
+        String endpoint = "/v1/accounts";
         
-        MultiValueMap<String, String> parameters = new LinkedMultiValueMap<>();
-        parameters.add("endpoint", endpoint);
-        parameters.add("currency", "ALL");
+        try {
+            // 빗썸 신규 API(JWT 방식) 인증 토큰 생성
+            Algorithm algorithm = Algorithm.HMAC256(secretKey);
+            String jwtToken = JWT.create()
+                    .withClaim("access_key", accessKey)
+                    .withClaim("nonce", UUID.randomUUID().toString())
+                    .withClaim("timestamp", System.currentTimeMillis())
+                    .sign(algorithm);
 
-        String strParams = "endpoint=" + endpoint + "&currency=ALL";
-        String apiSign = base64Encode(hmacSha512(secretKey, endpoint + (char)0 + strParams + (char)0 + nonce));
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Authorization", "Bearer " + jwtToken);
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("Api-Key", accessKey);
-        headers.set("Api-Sign", apiSign);
-        headers.set("Api-Nonce", String.valueOf(nonce));
-        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+            
+            // 신규 API 엔드포인트 호출 (/v1/accounts)
+            ResponseEntity<List> response = restTemplate.exchange(
+                    apiUrl + endpoint, HttpMethod.GET, entity, List.class);
 
-        HttpEntity<MultiValueMap<String, String>> entity = new HttpEntity<>(parameters, headers);
-        ResponseEntity<Map> response = restTemplate.postForEntity("https://api.bithumb.com" + endpoint, entity, Map.class);
+            double krw = 0;
+            List<Map<String, String>> coins = new ArrayList<>();
 
-        if (response.getBody() != null && "0000".equals(response.getBody().get("status"))) {
-            Map<String, Object> data = (Map<String, Object>) response.getBody().get("data");
-            double krw = Double.parseDouble(data.get("total_krw").toString());
-            return Map.of("mainBalance", krw, "mainUnit", "KRW");
+            if (response.getBody() != null) {
+                for (Object obj : response.getBody()) {
+                    Map<String, String> item = (Map<String, String>) obj;
+                    // 빗썸 신규 API의 필드명이 업비트와 동일하게 currency, balance인 경우
+                    String currency = item.get("currency");
+                    String balanceStr = item.get("balance");
+                    
+                    if (balanceStr == null) continue;
+                    double balance = Double.parseDouble(balanceStr);
+                    
+                    if ("KRW".equals(currency)) {
+                        krw = balance;
+                    } else if (balance > 0) {
+                        coins.add(Map.of("currency", currency, "balance", String.valueOf(balance)));
+                    }
+                }
+                return Map.of("mainBalance", krw, "mainUnit", "KRW", "balances", coins);
+            }
+        } catch (Exception e) {
+            log.error("Bithumb (JWT) API 호출 중 예외 발생: {}", e.getMessage());
+            throw new RuntimeException("Bithumb API 호출 실패: " + e.getMessage());
         }
         return null;
     }

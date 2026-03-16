@@ -33,6 +33,16 @@ const Arbitrage: React.FC<ArbitrageProps> = ({
   const [botStatus, setBotStatus] = useState<{[key: string]: boolean}>({});
   const [tradingLoading, setTradingLoading] = useState<{[key: string]: boolean}>({});
 
+  // 숫자 포맷팅 함수 (콤마 추가)
+  const formatNumber = (num: number) => {
+    return num.toLocaleString('ko-KR');
+  };
+
+  // 콤마 제거 후 숫자로 변환
+  const parseNumber = (val: string) => {
+    return parseInt(val.replace(/[^0-9]/g, '')) || 0;
+  };
+
   const fetchBotStatus = async () => {
     try {
       const res = await axios.get('/api/trading/status');
@@ -69,7 +79,6 @@ const Arbitrage: React.FC<ArbitrageProps> = ({
   };
 
   const handleToggleBot = async (symbol: string, action: 'START' | 'STOP' | 'START_AUTO') => {
-    // 1. 로그인 체크
     if (!isLoggedIn) {
       if (confirm('로그인이 필요한 서비스입니다. 로그인 페이지로 이동하시겠습니까?')) {
         window.location.href = '/auth';
@@ -77,10 +86,8 @@ const Arbitrage: React.FC<ArbitrageProps> = ({
       return;
     }
 
-    // 2. API 연동 체크 (STOP 요청은 제외)
     if (action !== 'STOP') {
       const domesticMatch = connectedExchanges.includes(selectedDomesticExchange);
-      // BINANCE_FUTURES 등은 BINANCE로 체크
       const foreignMatch = connectedExchanges.includes(selectedForeignExchange);
 
       if (!domesticMatch || !foreignMatch) {
@@ -219,7 +226,15 @@ const Arbitrage: React.FC<ArbitrageProps> = ({
             </div>
             <div className="input-group">
               <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', display: 'block' }}>투자 금액 (KRW)</label>
-              <input type="number" step="100000" value={amountKrw} onChange={(e) => setAmountKrw(parseInt(e.target.value))} style={{ width: '100%', padding: '0.6rem', borderRadius: '0.4rem', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white' }} />
+              <div style={{ position: 'relative' }}>
+                <input 
+                  type="text" 
+                  value={formatNumber(amountKrw)} 
+                  onChange={(e) => setAmountKrw(parseNumber(e.target.value))} 
+                  style={{ width: '100%', padding: '0.6rem 2.4rem 0.6rem 0.6rem', borderRadius: '0.4rem', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white', textAlign: 'right' }} 
+                />
+                <span style={{ position: 'absolute', right: '0.8rem', top: '50%', transform: 'translateY(-50%)', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>원</span>
+              </div>
             </div>
             <div className="input-group">
               <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', display: 'block' }}>레버리지 (배)</label>
@@ -279,7 +294,6 @@ const Arbitrage: React.FC<ArbitrageProps> = ({
                   </div>
                 ) : null}
 
-                {/* 봇 가동 버튼 추가 */}
                 <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
                   {isBotActive(rec.symbol) ? (
                     <button 
