@@ -20,7 +20,8 @@ public class ArbitrageBacktestService {
     private final InfluxDBClient influxDBClient;
     private final InfluxDbConfig config;
 
-    private static final double TOTAL_FEE_ROUNDTRIP = 0.002; // 0.2%
+    private static final double TICK_BUFFER = 0.15; // 0.15% 추가 여유가 있어야 실제 체결 가능하다고 가정 (틱 사이즈 고려)
+    private static final double TOTAL_FEE_ROUNDTRIP = 0.004; // 0.4% (수수료 0.2% + 슬리피지/틱 손실 0.2%)
 
     public BacktestResponse runBacktest(String symbol, double entryKimp, double exitKimp, String range) {
         String query = String.format(
@@ -50,14 +51,14 @@ public class ArbitrageBacktestService {
 
         for (KimchPremium current : history) {
             if (!isHolding) {
-                if (current.getRatio() <= entryKimp) {
+                // 진입: 목표 김프보다 버퍼만큼 더 떨어져야 실제 체결 (호가 경쟁 고려)
+                if (current.getRatio() <= (entryKimp - TICK_BUFFER)) {
                     isHolding = true;
                     entryPoint = current;
                     lastFundingTime = current.getTime();
                 }
             } else {
-                // 1. 보유 중 펀딩비 누적 (매 8시간마다 펀딩이 발생한다고 가정)
-                // 실제 바이낸스 정산 시각(01, 09, 17시)을 체크하면 더 정확하지만, 여기서는 단순화하여 8시간 간격으로 체크
+                // 1. 보유 중 펀딩비 누적
                 Duration timeFromLastFunding = Duration.between(lastFundingTime, current.getTime());
                 if (timeFromLastFunding.toHours() >= 8) {
                     accumulatedFundingProfit += (current.getFundingRate() != null ? current.getFundingRate() : 0.0) * 100;
@@ -65,12 +66,12 @@ public class ArbitrageBacktestService {
                     lastFundingTime = current.getTime();
                 }
 
-                // 2. 탈출 조건 체크
-                if (current.getRatio() >= exitKimp) {
+                // 2. 탈출 조건 체크: 목표 김프보다 버퍼만큼 더 올라야 실제 체결 (호가 경쟁 고려)
+                if (current.getRatio() >= (exitKimp + TICK_BUFFER)) {
                     isHolding = false;
                     totalTrades++;
                     
-                    // 김프 수익: (매도김프 - 매수김프) - 수수료
+                    // 김프 수익: (매도김프 - 매수김프) - (수수료 및 슬리피지 적용)
                     double tradeKimpProfit = (current.getRatio() - entryPoint.getRatio()) - (TOTAL_FEE_ROUNDTRIP * 100);
                     accumulatedKimpProfit += tradeKimpProfit;
                     
