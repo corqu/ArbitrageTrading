@@ -13,6 +13,7 @@ public class BithumbTickerDto {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class BithumbContent {
         private String symbol;
-        private String lastPrice;
+        private String closePrice;
+        private String value; // 24시 거래금액
     }
 }

@@ -3,6 +3,7 @@ package corque.gimpalarm.coin.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import corque.gimpalarm.coin.dto.PriceManager;
 import corque.gimpalarm.coin.dto.UpbitTickerDto;
+import corque.gimpalarm.coin.repository.SupportedCoinRepository;
 import corque.gimpalarm.common.config.CoinConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,21 +33,16 @@ public class UpbitWebSocketService {
     private final CoinConfig coinConfig;
     private final CoinBatchService coinBatchService;
     private final BinanceFuturesWebSocketService binanceFuturesWebSocketService;
+    private final SupportedCoinRepository coinRepository;
 
     @EventListener(ApplicationReadyEvent.class)
-    @Order(1) // 코인 리스트 준비가 먼저 되어야 함
     public void init() {
-        // 1. DB에서 코인 목록 로드 (없으면 최초 1회 API 호출)
-        coinBatchService.syncConfigWithDb();
-        if (coinConfig.getCoins() == null || coinConfig.getCoins().isEmpty()) {
-            log.info("DB에 코인 목록이 없습니다. 최초 갱신을 시작합니다.");
-            coinBatchService.updateSupportedCoins();
-        }
+        log.info("실시간 소켓 연결을 시작합니다.");
         
-        // 2. 업비트 소켓 연결
+        // 1. 업비트 소켓 연결
         connect();
         
-        // 3. 바이낸스 선물 소켓 연결 (순차 실행)
+        // 2. 바이낸스 선물 소켓 연결
         binanceFuturesWebSocketService.connect();
     }
 
@@ -56,9 +52,12 @@ public class UpbitWebSocketService {
         client.execute(new AbstractWebSocketHandler() {
             @Override
             public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-                List<String> codes = coinConfig.getCoins().stream()
-                        .map(coin -> "KRW-" + coin.toUpperCase())
+                // 업비트에 상장된 코인만 필터링
+                List<String> codes = coinRepository.findAll().stream()
+                        .filter(c -> c.isUpbit())
+                        .map(c -> "KRW-" + c.getSymbol().toUpperCase())
                         .collect(Collectors.toList());
+                
                 codes.add("KRW-USDT"); // 환율용
 
                 String coinJson = codes.stream()
@@ -67,7 +66,7 @@ public class UpbitWebSocketService {
 
                 String subscribeMessage = String.format("[{\"ticket\":\"my_kimp_project\"},{\"type\":\"ticker\",\"codes\":[%s]}]", coinJson);
                 session.sendMessage(new TextMessage(subscribeMessage));
-                log.info("업비트 소켓 연결 및 구독 시작 ({} 종)", codes.size());
+                log.info("업비트 소켓 구독: {} 종", codes.size());
             }
 
             @Override
@@ -82,7 +81,7 @@ public class UpbitWebSocketService {
                     } else {
                         String symbol = ticker.getCode().split("-")[1].toUpperCase();
                         priceManager.updatePrice("UB_" + symbol, price);
-                        priceManager.updateTradeVolume(symbol, ticker.getAccTradePrice24h()); // 거래대금 업데이트 추가
+                        priceManager.updateTradeVolume("UB_" + symbol, ticker.getAccTradePrice24h()); // 거래대금 업데이트 추가
                     }
                 }
             }
