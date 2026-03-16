@@ -37,13 +37,34 @@ public class UpbitWebSocketService {
 
     @EventListener(ApplicationReadyEvent.class)
     public void init() {
-        log.info("실시간 소켓 연결을 시작합니다.");
+        log.info("실시간 소켓 연결 및 초기 데이터 수집을 시작합니다.");
         
+        // 0. 업비트 REST API로 초기 환율(KRW-USDT) 가져오기
+        fetchInitialUsdKrw();
+
         // 1. 업비트 소켓 연결
         connect();
         
         // 2. 바이낸스 선물 소켓 연결
         binanceFuturesWebSocketService.connect();
+    }
+
+    private void fetchInitialUsdKrw() {
+        try {
+            org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
+            String url = "https://api.upbit.com/v1/ticker?markets=KRW-USDT";
+            java.util.List<java.util.Map<String, Object>> response = restTemplate.getForObject(url, java.util.List.class);
+            
+            if (response != null && !response.isEmpty()) {
+                Double price = Double.valueOf(response.get(0).get("trade_price").toString());
+                priceManager.updateUsdKrw(price);
+                log.info("초기 환율 로드 성공: {}원 (Upbit REST API)", price);
+            }
+        } catch (Exception e) {
+            log.error("초기 환율 로드 실패: {}", e.getMessage());
+            // 실패 시 기본값이라도 설정하여 목록 차단 방지
+            priceManager.updateUsdKrw(1450.0);
+        }
     }
 
     private void connect() {
