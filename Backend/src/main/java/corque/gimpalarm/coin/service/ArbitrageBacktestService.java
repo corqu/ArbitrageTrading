@@ -29,7 +29,8 @@ public class ArbitrageBacktestService {
             "|> range(start: %s) " +
             "|> filter(fn: (r) => r[\"_measurement\"] == \"kimp\") " +
             "|> filter(fn: (r) => r[\"symbol\"] == \"%s\") " +
-            "|> pivot(rowKey:[\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")",
+            "|> pivot(rowKey:[\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\") " +
+            "|> sort(columns: [\"_time\"])",
             config.getBucket(), range, symbol.toUpperCase()
         );
 
@@ -58,24 +59,38 @@ public class ArbitrageBacktestService {
                     lastFundingTime = current.getTime();
                 }
             } else {
-                // 1. 보유 중 펀딩비 누적
-                Duration timeFromLastFunding = Duration.between(lastFundingTime, current.getTime());
-                if (timeFromLastFunding.toHours() >= 8) {
-                    accumulatedFundingProfit += (current.getFundingRate() != null ? current.getFundingRate() : 0.0) * 100;
-                    totalFundingCount++;
-                    lastFundingTime = current.getTime();
+                // 1. 보유 중 펀딩비 누적 (8시간 간격 체크 로직 정교화)
+                // InfluxDB 데이터 시간 차이가 8시간 이상 벌어질 때만 합산
+                if (lastFundingTime != null) {
+                    long hoursPassed = Duration.between(lastFundingTime, current.getTime()).toHours();
+                    if (hoursPassed >= 8) {
+                        // 8시간당 몇 번의 펀딩 타임이 지났는지 계산 (데이터가 띄엄띄엄 있을 경우 대비)
+                        int fundingTimes = (int) (hoursPassed / 8);
+                        double currentRate = (current.getFundingRate() != null ? current.getFundingRate() : 0.0);
+                        
+                        accumulatedFundingProfit += (currentRate * 100) * fundingTimes;
+                        totalFundingCount += fundingTimes;
+                        
+                        // 마지막 합산 시간 업데이트 (정확히 8시간 단위로 끊어서 다음 계산에 영향 없도록)
+                        lastFundingTime = lastFundingTime.plus(Duration.ofHours(fundingTimes * 8L));
+                    }
                 }
 
-                // 2. 탈출 조건 체크: 목표 김프보다 버퍼만큼 더 올라야 실제 체결 (호가 경쟁 고려)
+                // 2. 탈출 조건 체크: 목표 김프보다 버퍼만큼 더 올라야 실제 체결
                 if (current.getRatio() >= (exitKimp + TICK_BUFFER)) {
                     isHolding = false;
                     totalTrades++;
                     
-                    // 김프 수익: (매도김프 - 매수김프) - (수수료 및 슬리피지 적용)
-                    double tradeKimpProfit = (current.getRatio() - entryPoint.getRatio()) - (TOTAL_FEE_ROUNDTRIP * 100);
+                    // 실제 시장가 체결 시 목표가보다 조금 더 유리하거나 불리하게 체결될 수 있지만,
+                    // 백테스트에서는 목표가(exitKimp)에 버퍼를 더한 값 정도로 수익을 제한하는 것이 합리적임.
+                    // 만약 데이터가 2%를 건너뛰고 바로 50%가 찍혔더라도 봇은 지정가 혹은 조건부 시장가로 2% 근처에서 나갔을 것이기 때문.
+                    double executionRatio = Math.min(current.getRatio(), exitKimp + TICK_BUFFER + 0.1); // 최대 목표가 + 0.25% 정도로 제한
+                    
+                    double tradeKimpProfit = (executionRatio - entryPoint.getRatio()) - (TOTAL_FEE_ROUNDTRIP * 100);
                     accumulatedKimpProfit += tradeKimpProfit;
                     
-                    totalHoldingDurationMs += Duration.between(entryPoint.getTime(), current.getTime()).toMillis();
+                    long duration = Duration.between(entryPoint.getTime(), current.getTime()).toMillis();
+                    totalHoldingDurationMs += Math.max(0, duration);
                 }
             }
         }
