@@ -50,7 +50,6 @@ public class UserBotService {
                 .domesticExchange(request.getDomesticExchange())
                 .foreignExchange(request.getForeignExchange())
                 .amountKrw(request.getAmountKrw())
-                .limitPrice(request.getLimitPrice())
                 .leverage(request.getLeverage())
                 .action(request.getAction())
                 .entryKimp(request.getEntryKimp())
@@ -81,7 +80,6 @@ public class UserBotService {
 
         // 값 업데이트
         userBot.setAmountKrw(request.getAmountKrw());
-        userBot.setLimitPrice(request.getLimitPrice());
         userBot.setLeverage(request.getLeverage());
         userBot.setEntryKimp(request.getEntryKimp());
         userBot.setExitKimp(request.getExitKimp());
@@ -123,7 +121,6 @@ public class UserBotService {
                 .domesticExchange(userBot.getDomesticExchange())
                 .foreignExchange(userBot.getForeignExchange())
                 .amountKrw(userBot.getAmountKrw())
-                .limitPrice(userBot.getLimitPrice())
                 .leverage(userBot.getLeverage())
                 .action(userBot.getAction())
                 .entryKimp(userBot.getEntryKimp())

@@ -31,12 +31,6 @@ public class KimchPremium {
     private Double fundingRate; // 현재 실시간 펀딩비 (선물일 경우에만 존재)
 
     @Column
-    private Double adjustedApr; // 자본 대비 실질 연환산 수익률 (%)
-
-    @Column
-    private Double liquidationPrice; // 예상 청산 가격 (선물 가격 기준)
-
-    @Column
     private Double tradeVolume; // 업비트 24시간 누적 거래대금 (KRW)
 
     @Column(timestamp = true)
@@ -44,14 +38,12 @@ public class KimchPremium {
 
     @Builder
     public KimchPremium(String symbol, String domesticExchange, String foreignExchange, 
-                       Double ratio, Double fundingRate, Double adjustedApr, Double liquidationPrice, Double tradeVolume) {
+                       Double ratio, Double fundingRate, Double tradeVolume) {
         this.symbol = symbol;
         this.domesticExchange = domesticExchange;
         this.foreignExchange = foreignExchange;
         this.ratio = ratio;
         this.fundingRate = fundingRate;
-        this.adjustedApr = adjustedApr;
-        this.liquidationPrice = liquidationPrice;
         this.tradeVolume = tradeVolume;
         this.time = Instant.now();
     }

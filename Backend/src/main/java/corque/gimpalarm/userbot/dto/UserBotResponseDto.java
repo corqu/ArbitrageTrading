@@ -11,7 +11,6 @@ public class UserBotResponseDto {
     private String domesticExchange;
     private String foreignExchange;
     private double amountKrw;
-    private Double limitPrice;
     private int leverage;
     private String action;
     private Double entryKimp;

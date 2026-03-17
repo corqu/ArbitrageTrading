@@ -2,7 +2,6 @@ package corque.gimpalarm.coin.service;
 
 import corque.gimpalarm.coin.dto.KimpResponseDto;
 import corque.gimpalarm.coin.dto.PriceManager;
-import corque.gimpalarm.common.config.CoinConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -18,7 +17,6 @@ import java.util.Map;
 public class KimpService {
 
     private final PriceManager priceManager;
-    private final CoinConfig coinConfig;
 
     // 수수료 및 슬리피지 설정 (비율로 환산, 0.0005 = 0.05%)
     private static final double UPBIT_FEE = 0.0005;       // 업비트 현물 수수료 (0.05%)
@@ -94,23 +92,11 @@ public class KimpService {
                                       Double domesticPrice, Double foreignPrice, 
                                       Double fundingRate, Double usdKrw, Double tradeVolume, double domesticFee) {
         
-        // 국내가 또는 해외가가 0인 경우 계산 제외 (데이터 오류 방지)
         if (domesticPrice == null || domesticPrice <= 0 || foreignPrice == null || foreignPrice <= 0) {
             return null;
         }
 
         double ratio = ((domesticPrice / (foreignPrice * usdKrw)) - 1) * 100;
-        Double adjustedApr = null;
-        Double liquidationPrice = null;
-
-        if (fundingRate != null && foreignEx.contains("FUTURES")) {
-            int leverage = coinConfig.getLeverage();
-            double totalCapital = 1.0 + (1.0 / leverage);
-            double annualFundingIncome = fundingRate * 3 * 365;
-            double entryExitCost = (domesticFee * 2) + (BINANCE_FUTURES_FEE * 2) + (SLIPPAGE * 2);
-            adjustedApr = ((annualFundingIncome - entryExitCost) / totalCapital) * 100;
-            liquidationPrice = foreignPrice * (1.0 + (0.9 / leverage));
-        }
         
         return KimpResponseDto.builder()
                 .symbol(symbol)
@@ -118,8 +104,6 @@ public class KimpService {
                 .foreignExchange(foreignEx)
                 .ratio(ratio)
                 .fundingRate(fundingRate)
-                .adjustedApr(adjustedApr)
-                .liquidationPrice(liquidationPrice)
                 .tradeVolume(tradeVolume)
                 .build();
     }

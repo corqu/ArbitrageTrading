@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import corque.gimpalarm.coin.dto.PriceManager;
 import corque.gimpalarm.coin.dto.UpbitTickerDto;
 import corque.gimpalarm.coin.repository.SupportedCoinRepository;
-import corque.gimpalarm.common.config.CoinConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -30,7 +29,6 @@ public class UpbitWebSocketService {
     private final String UPBIT_WSS_URL = "wss://api.upbit.com/websocket/v1";
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final PriceManager priceManager;
-    private final CoinConfig coinConfig;
     private final CoinBatchService coinBatchService;
     private final BinanceFuturesWebSocketService binanceFuturesWebSocketService;
     private final SupportedCoinRepository coinRepository;

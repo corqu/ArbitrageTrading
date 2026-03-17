@@ -33,8 +33,6 @@ public class UserBot extends BaseEntity {
     @Column(nullable = false)
     private double amountKrw;
 
-    private Double limitPrice;
-
     @Column(nullable = false)
     private int leverage;
 

@@ -3,7 +3,7 @@ package corque.gimpalarm.coin.service;
 import corque.gimpalarm.coin.dto.KimpResponseDto;
 import corque.gimpalarm.coin.dto.PriceManager;
 import corque.gimpalarm.coin.dto.TradingRequest;
-import corque.gimpalarm.common.config.CoinConfig;
+import corque.gimpalarm.user.domain.User;
 import corque.gimpalarm.user.repository.UserCredentialRepository;
 import corque.gimpalarm.user.repository.UserRepository;
 import corque.gimpalarm.user.service.ExchangeApiService;
@@ -26,7 +26,6 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 public class TradingBotService {
 
-    private final CoinConfig coinConfig;
     private final KimpService kimpService;
     private final UserCredentialRepository userCredentialRepository;
     private final UserRepository userRepository;
@@ -69,7 +68,6 @@ public class TradingBotService {
             request.setDomesticExchange(bot.getDomesticExchange());
             request.setForeignExchange(bot.getForeignExchange());
             request.setAmountKrw(bot.getAmountKrw());
-            request.setLimitPrice(bot.getLimitPrice());
             request.setLeverage(bot.getLeverage());
             request.setAction(bot.getAction());
             request.setEntryKimp(bot.getEntryKimp());
@@ -99,13 +97,13 @@ public class TradingBotService {
             return "로그인이 필요한 서비스입니다.";
         }
 
-        corque.gimpalarm.user.domain.User user = userRepository.findByEmail(auth.getName())
+        User user = userRepository.findByEmail(auth.getName())
             .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
 
         return executeTradeForUser(user, request);
     }
 
-    public String executeTradeForUser(corque.gimpalarm.user.domain.User user, TradingRequest request) {
+    public String executeTradeForUser(User user, TradingRequest request) {
         if (!hasCredentials(user, request.getDomesticExchange()) || !hasCredentials(user, request.getForeignExchange())) {
             return String.format("%s 또는 %s API 키가 등록되지 않았습니다.", 
                 request.getDomesticExchange(), request.getForeignExchange());
@@ -113,17 +111,14 @@ public class TradingBotService {
 
         String botKey = generateBotKey(user.getId(), request);
 
-        if ("START_AUTO".equalsIgnoreCase(request.getAction())) {
-            return startAutoArbitrage(request, botKey, user.getId());
-        } else if ("START".equalsIgnoreCase(request.getAction())) {
-            return startLimitArbitrage(request, botKey, user.getId());
-        } else if ("STOP".equalsIgnoreCase(request.getAction())) {
+        if ("STOP".equalsIgnoreCase(request.getAction())) {
             return stopArbitrage(botKey);
         }
-        return "알 수 없는 명령입니다.";
+        
+        return startAutoArbitrage(request, botKey, user.getId());
     }
 
-    private boolean hasCredentials(corque.gimpalarm.user.domain.User user, String exchange) {
+    private boolean hasCredentials(User user, String exchange) {
         String ex = exchange.toUpperCase();
         if (ex.contains("BINANCE")) ex = "BINANCE";
         if (ex.contains("BYBIT")) ex = "BYBIT";
@@ -134,15 +129,6 @@ public class TradingBotService {
         if (activeBots.containsKey(botKey)) return botKey + " 봇이 이미 실행 중입니다.";
         activeBots.put(botKey, new ActiveTrade(request, BotStatus.WAITING, userId, null, 0.0, 0.0, 0.0, null, null));
         return botKey + " 자동 매매 구독 완료.";
-    }
-
-    private String startLimitArbitrage(TradingRequest request, String botKey, Long userId) {
-        if (activeBots.containsKey(botKey)) return botKey + " 봇이 이미 실행 중입니다.";
-        try {
-            double targetQty = request.getAmountKrw() / request.getLimitPrice();
-            activeBots.put(botKey, new ActiveTrade(request, BotStatus.ENTERING, userId, "ORD-" + System.currentTimeMillis(), targetQty, 0.0, 0.0, null, null));
-            return botKey + " 지정가 진입 시작.";
-        } catch (Exception e) { return "오류: " + e.getMessage(); }
     }
 
     @EventListener
