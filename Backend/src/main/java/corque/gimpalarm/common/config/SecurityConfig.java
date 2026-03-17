@@ -34,6 +34,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(authorize -> authorize
                 .requestMatchers("/api/auth/**", "/ws-stomp/**").permitAll()
                 .requestMatchers("/api/trading/**").authenticated() // 매매 관련 API는 인증 필수
+                .requestMatchers("/api/user-bots/**").authenticated() // 봇 관리 API 인증 필수
                 .anyRequest().permitAll()
             )
             .addFilterBefore(new JwtAuthenticationFilter(jwtTokenProvider, userRepository), UsernamePasswordAuthenticationFilter.class);

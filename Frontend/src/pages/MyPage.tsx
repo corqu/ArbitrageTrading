@@ -51,7 +51,27 @@ const MyPage: React.FC<MyPageProps> = ({
   const [isUpdatingBot, setIsUpdatingBot] = useState<string | null>(null);
 
   const fetchAssetData = async (exchange: string, setAssetData: any, setIsLoading: any) => {
-    // ... (existing code)
+    // 대소문자 구분 없이 연결된 거래소 확인
+    const isConnected = connectedExchanges.some(ex => ex.toUpperCase() === exchange.toUpperCase());
+    if (!isConnected) {
+      setAssetData(null);
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      const res = await axios.get(`/api/user/credentials/assets?exchange=${exchange}`);
+      // 백엔드 응답 구조: { usdKrw, data: { mainBalance, krwBalance, balances, ... }, exchange }
+      if (res.data && res.data.data) {
+        setAssetData(res.data.data);
+      } else {
+        setAssetData(null);
+      }
+    } catch (e) {
+      setAssetData(null);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const fetchOrders = async () => {

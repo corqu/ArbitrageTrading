@@ -16,6 +16,8 @@ import org.springframework.web.client.RestTemplate;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.math.BigInteger;
+import java.security.MessageDigest;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
@@ -219,6 +221,254 @@ public class ExchangeApiService {
             }
         }
         return null;
+    }
+
+    /**
+     * 업비트 주문 실행
+     */
+    public Map<String, Object> orderUpbit(Long userId, String symbol, String side, double volume, Double price, String ordType) {
+        UserCredential credential = getCredential(userId, "UPBIT");
+        String accessKey = encryptionUtil.decrypt(credential.getApiKey()).trim();
+        String secretKey = encryptionUtil.decrypt(credential.getApiSecret()).trim();
+
+        String market = "KRW-" + symbol.toUpperCase();
+        
+        Map<String, String> params = new HashMap<>();
+        params.put("market", market);
+        params.put("side", side.toLowerCase()); // bid(매수), ask(매도)
+        if (volume > 0) params.put("volume", String.valueOf(volume));
+        if (price != null) params.put("price", String.valueOf(price));
+        params.put("ord_type", ordType.toLowerCase()); // limit(지정가), price(시장가 매수), market(시장가 매도)
+
+        ArrayList<String> queryElements = new ArrayList<>();
+        for(Map.Entry<String, String> entity : params.entrySet()) {
+            queryElements.add(entity.getKey() + "=" + entity.getValue());
+        }
+        String queryString = String.join("&", queryElements);
+
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-512");
+            md.update(queryString.getBytes("UTF-8"));
+            String queryHash = String.format("%0128x", new BigInteger(1, md.digest()));
+
+            Algorithm algorithm = Algorithm.HMAC256(secretKey);
+            String jwtToken = JWT.create()
+                    .withClaim("access_key", accessKey)
+                    .withClaim("nonce", UUID.randomUUID().toString())
+                    .withClaim("query_hash", queryHash)
+                    .withClaim("query_hash_alg", "SHA512")
+                    .sign(algorithm);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Authorization", "Bearer " + jwtToken);
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            HttpEntity<Map<String, String>> entity = new HttpEntity<>(params, headers);
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    "https://api.upbit.com/v1/orders", HttpMethod.POST, entity, Map.class);
+
+            return response.getBody();
+        } catch (Exception e) {
+            log.error("Upbit Order Error: {}", e.getMessage());
+            throw new RuntimeException("업비트 주문 실패: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 바이낸스 선물 주문 실행
+     */
+    public Map<String, Object> orderBinanceFutures(Long userId, String symbol, String side, String positionSide, double quantity, Double price, String type) {
+        UserCredential credential = getCredential(userId, "BINANCE");
+        String accessKey = encryptionUtil.decrypt(credential.getApiKey()).trim();
+        String secretKey = encryptionUtil.decrypt(credential.getApiSecret()).trim();
+
+        String binanceSymbol = symbol.toUpperCase() + "USDT";
+        long timestamp = System.currentTimeMillis();
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("symbol=").append(binanceSymbol);
+        sb.append("&side=").append(side.toUpperCase()); // BUY, SELL
+        sb.append("&positionSide=").append(positionSide.toUpperCase()); // BOTH, LONG, SHORT
+        sb.append("&type=").append(type.toUpperCase()); // LIMIT, MARKET
+        sb.append("&quantity=").append(quantity);
+        if (price != null) sb.append("&price=").append(price);
+        sb.append("&timestamp=").append(timestamp);
+
+        String queryString = sb.toString();
+        String signature = hmacSha256(secretKey, queryString);
+        String url = "https://fapi.binance.com/fapi/v1/order?" + queryString + "&signature=" + signature;
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-MBX-APIKEY", accessKey);
+        HttpEntity<String> entity = new HttpEntity<>(headers);
+
+        try {
+            ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.POST, entity, Map.class);
+            return response.getBody();
+        } catch (Exception e) {
+            log.error("Binance Order Error: {}", e.getMessage());
+            throw new RuntimeException("바이낸스 주문 실패: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 빗썸 주문 실행 (V1 신규 API 기준)
+     */
+    public Map<String, Object> orderBithumb(Long userId, String symbol, String side, double volume, Double price, String ordType) {
+        UserCredential credential = getCredential(userId, "BITHUMB");
+        String accessKey = encryptionUtil.decrypt(credential.getApiKey()).trim();
+        String secretKey = encryptionUtil.decrypt(credential.getApiSecret()).trim();
+
+        String market = "KRW-" + symbol.toUpperCase();
+        
+        Map<String, String> params = new HashMap<>();
+        params.put("market", market);
+        params.put("side", side.toLowerCase());
+        if (volume > 0) params.put("volume", String.valueOf(volume));
+        if (price != null) params.put("price", String.valueOf(price));
+        params.put("ord_type", ordType.toLowerCase());
+
+        ArrayList<String> queryElements = new ArrayList<>();
+        for(Map.Entry<String, String> entity : params.entrySet()) {
+            queryElements.add(entity.getKey() + "=" + entity.getValue());
+        }
+        String queryString = String.join("&", queryElements);
+
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-512");
+            md.update(queryString.getBytes("UTF-8"));
+            String queryHash = String.format("%0128x", new BigInteger(1, md.digest()));
+
+            Algorithm algorithm = Algorithm.HMAC256(secretKey);
+            String jwtToken = JWT.create()
+                    .withClaim("access_key", accessKey)
+                    .withClaim("nonce", UUID.randomUUID().toString())
+                    .withClaim("timestamp", System.currentTimeMillis()) // 빗썸은 타임스탬프 필수
+                    .withClaim("query_hash", queryHash)
+                    .withClaim("query_hash_alg", "SHA512")
+                    .sign(algorithm);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Authorization", "Bearer " + jwtToken);
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            HttpEntity<Map<String, String>> entity = new HttpEntity<>(params, headers);
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    "https://api.bithumb.com/v1/orders", HttpMethod.POST, entity, Map.class);
+
+            return response.getBody();
+        } catch (Exception e) {
+            log.error("Bithumb Order Error: {}", e.getMessage());
+            throw new RuntimeException("빗썸 주문 실패: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 바이낸스 선물 레버리지 설정
+     */
+    public Map<String, Object> setBinanceLeverage(Long userId, String symbol, int leverage) {
+        UserCredential credential = getCredential(userId, "BINANCE");
+        String accessKey = encryptionUtil.decrypt(credential.getApiKey()).trim();
+        String secretKey = encryptionUtil.decrypt(credential.getApiSecret()).trim();
+
+        String binanceSymbol = symbol.toUpperCase() + "USDT";
+        long timestamp = System.currentTimeMillis();
+
+        String queryString = "symbol=" + binanceSymbol + "&leverage=" + leverage + "&timestamp=" + timestamp;
+        String signature = hmacSha256(secretKey, queryString);
+        String url = "https://fapi.binance.com/fapi/v1/leverage?" + queryString + "&signature=" + signature;
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-MBX-APIKEY", accessKey);
+        HttpEntity<String> entity = new HttpEntity<>(headers);
+
+        try {
+            ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.POST, entity, Map.class);
+            return response.getBody();
+        } catch (Exception e) {
+            log.error("Binance Leverage Set Error: {}", e.getMessage());
+            throw new RuntimeException("바이낸스 레버리지 설정 실패: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 바이낸스 선물 조건부 주문 (SL/TP)
+     */
+    public Map<String, Object> orderBinanceFuturesConditional(Long userId, String symbol, String side, String positionSide, double quantity, double stopPrice, String type) {
+        UserCredential credential = getCredential(userId, "BINANCE");
+        String accessKey = encryptionUtil.decrypt(credential.getApiKey()).trim();
+        String secretKey = encryptionUtil.decrypt(credential.getApiSecret()).trim();
+
+        String binanceSymbol = symbol.toUpperCase() + "USDT";
+        long timestamp = System.currentTimeMillis();
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("symbol=").append(binanceSymbol);
+        sb.append("&side=").append(side.toUpperCase());
+        sb.append("&positionSide=").append(positionSide.toUpperCase());
+        sb.append("&type=").append(type.toUpperCase()); // STOP_MARKET, TAKE_PROFIT_MARKET
+        sb.append("&stopPrice=").append(stopPrice);
+        sb.append("&closePosition=true"); // 포지션 전량 종료
+        sb.append("&timestamp=").append(timestamp);
+
+        String queryString = sb.toString();
+        String signature = hmacSha256(secretKey, queryString);
+        String url = "https://fapi.binance.com/fapi/v1/order?" + queryString + "&signature=" + signature;
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-MBX-APIKEY", accessKey);
+        HttpEntity<String> entity = new HttpEntity<>(headers);
+
+        try {
+            ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.POST, entity, Map.class);
+            return response.getBody();
+        } catch (Exception e) {
+            log.error("Binance Conditional Order Error: {}", e.getMessage());
+            throw new RuntimeException("바이낸스 조건부 주문 실패: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 바이낸스 선물 특정 코인의 현재 포지션 수량 조회
+     */
+    public double getBinanceFuturesPosition(Long userId, String symbol) {
+        UserCredential credential = getCredential(userId, "BINANCE");
+        String accessKey = encryptionUtil.decrypt(credential.getApiKey()).trim();
+        String secretKey = encryptionUtil.decrypt(credential.getApiSecret()).trim();
+
+        String binanceSymbol = symbol.toUpperCase() + "USDT";
+        long timestamp = System.currentTimeMillis();
+        String queryString = "symbol=" + binanceSymbol + "&timestamp=" + timestamp;
+        String signature = hmacSha256(secretKey, queryString);
+        String url = "https://fapi.binance.com/fapi/v2/positionRisk?" + queryString + "&signature=" + signature;
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-MBX-APIKEY", accessKey);
+        HttpEntity<String> entity = new HttpEntity<>(headers);
+
+        try {
+            ResponseEntity<List> response = restTemplate.exchange(url, HttpMethod.GET, entity, List.class);
+            if (response.getBody() != null && !response.getBody().isEmpty()) {
+                // 여러 포지션 모드(Hedge/One-way)가 있을 수 있으므로 SHORT 포지션 필터링
+                for (Object obj : response.getBody()) {
+                    Map<String, Object> pos = (Map<String, Object>) obj;
+                    if ("SHORT".equalsIgnoreCase(pos.get("positionSide").toString())) {
+                        return Math.abs(Double.parseDouble(pos.get("positionAmt").toString()));
+                    }
+                }
+            }
+            return 0.0;
+        } catch (Exception e) {
+            log.error("Binance Position Fetch Error: {}", e.getMessage());
+            return -1.0; // 에러 발생 시 -1 반환하여 체크 건너뛰기
+        }
+    }
+
+    private UserCredential getCredential(Long userId, String exchange) {
+        return credentialRepository.findByUserId(userId).stream()
+                .filter(c -> c.getExchange().equalsIgnoreCase(exchange))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("연동되지 않은 거래소입니다: " + exchange));
     }
 
     private String hmacSha256(String secret, String message) {

@@ -18,3 +18,12 @@ export interface TradingRequest {
   symbol: string;
   action: 'START' | 'STOP';
 }
+
+export interface SubscribedBot {
+  symbol: string;
+  isActive: boolean;
+  targetRatio: number;
+  tradeAmount: number;
+  domesticExchange: string;
+  foreignExchange: string;
+}
