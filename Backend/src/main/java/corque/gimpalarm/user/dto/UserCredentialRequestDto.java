@@ -8,7 +8,6 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class UserCredentialRequestDto {
-    private Long userId;
     private String exchange;
     private String accessKey;
     private String secretKey;

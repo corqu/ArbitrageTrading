@@ -29,11 +29,10 @@ public class UserCredentialService {
     }
 
     @Transactional
-    public Long registerCredential(UserCredentialRequestDto requestDto) {
-        User user = userRepository.findById(requestDto.getUserId())
-                .orElseThrow(() -> new IllegalArgumentException("User not found: " + requestDto.getUserId()));
+    public Long registerCredential(Long userId, UserCredentialRequestDto requestDto) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
 
-        // Encrypt keys using EncryptionUtil
         String encryptedApiKey = encryptionUtil.encrypt(requestDto.getAccessKey());
         String encryptedApiSecret = encryptionUtil.encrypt(requestDto.getSecretKey());
 

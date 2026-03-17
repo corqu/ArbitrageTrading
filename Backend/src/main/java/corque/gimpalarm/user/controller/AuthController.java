@@ -3,6 +3,7 @@ package corque.gimpalarm.user.controller;
 import corque.gimpalarm.common.util.JwtTokenProvider;
 import corque.gimpalarm.user.domain.UserPrincipal;
 import corque.gimpalarm.user.service.AuthService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -10,6 +11,10 @@ import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -54,7 +59,7 @@ public class AuthController {
     }
 
     @PostMapping("/refresh")
-    public ResponseEntity<?> refresh(jakarta.servlet.http.HttpServletRequest request) {
+    public ResponseEntity<?> refresh(HttpServletRequest request) {
         String refreshToken = jwtTokenProvider.resolveRefreshToken(request);
         if (refreshToken == null) {
             return ResponseEntity.status(401).body("Refresh token not found");
@@ -73,7 +78,9 @@ public class AuthController {
     }
 
     @GetMapping("/me")
-    public ResponseEntity<?> getCurrentUser(@AuthenticationPrincipal UserPrincipal userPrincipal, jakarta.servlet.http.HttpServletRequest request) {
+    public ResponseEntity<?> getCurrentUser(
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
+            HttpServletRequest request) {
         if (userPrincipal == null) {
             return ResponseEntity.status(401).body("Not authenticated");
         }
@@ -81,7 +88,7 @@ public class AuthController {
         String token = jwtTokenProvider.resolveAccessToken(request);
         long expiresIn = (token != null) ? jwtTokenProvider.getRemainingTimeSeconds(token) : 0;
         
-        java.util.Map<String, Object> response = new java.util.HashMap<>();
+        Map<String, Object> response = new HashMap<>();
         response.put("nickname", userPrincipal.getNickname());
         response.put("expiresIn", expiresIn);
         
@@ -91,7 +98,7 @@ public class AuthController {
     @GetMapping("/check-nickname")
     public ResponseEntity<?> checkNickname(@RequestParam String nickname) {
         boolean isAvailable = authService.isNicknameAvailable(nickname);
-        return ResponseEntity.ok(java.util.Collections.singletonMap("available", isAvailable));
+        return ResponseEntity.ok(Collections.singletonMap("available", isAvailable));
     }
 
     @Data
