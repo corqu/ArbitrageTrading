@@ -1,12 +1,15 @@
 package corque.gimpalarm.coin.dto;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
+@RequiredArgsConstructor
 public class PriceManager {
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
     private final Map<String, Double> prices = new ConcurrentHashMap<>();
     private final Map<String, Double> fundingRates = new ConcurrentHashMap<>();
     private final Map<String, Double> tradeVolumes = new ConcurrentHashMap<>();
@@ -15,6 +18,7 @@ public class PriceManager {
 
     public void updatePrice(String key, double price){
         prices.put(key, price);
+        eventPublisher.publishEvent(new PriceChangedEvent(key, price));
     }
 
     public void updateTradeVolume(String key, double volume) {

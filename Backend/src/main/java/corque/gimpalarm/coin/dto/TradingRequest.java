@@ -13,4 +13,6 @@ public class TradingRequest {
     private String action;           // START (지정가 진입), STOP (중단), START_AUTO (자동 감시 진입)
     private Double entryKimp;        // 목표 진입 김프 (%)
     private Double exitKimp;         // 목표 탈출 김프 (%)
+    private Double stopLossPercent;  // 손절 제한 (%) - 예: 5.0 (5% 손실 시 종료)
+    private Double takeProfitPercent; // 익절 목표 (%) - 예: 10.0 (10% 수익 시 종료)
 }
