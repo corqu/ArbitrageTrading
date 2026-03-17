@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { 
-  Activity, ShieldAlert, RefreshCw, Repeat, User as UserIcon, ChevronDown
+  Activity, ShieldAlert, RefreshCw, Repeat, User as UserIcon, ChevronDown, Play, Square, Settings, Save
 } from 'lucide-react';
+import { SubscribedBot } from '../types';
 
 interface MyPageProps {
-  email: string;
+  // ... (rest of props)
+
   nickname: string;
   handleUpdateProfile: (e: React.FormEvent) => Promise<void>;
   newNickname: string;
@@ -45,29 +47,11 @@ const MyPage: React.FC<MyPageProps> = ({
   const [isLoadingForeign, setIsLoadingForeign] = useState(false);
 
   const [tradeOrders, setTradeOrders] = useState<any[]>([]);
+  const [subscribedBots, setSubscribedBots] = useState<SubscribedBot[]>([]);
+  const [isUpdatingBot, setIsUpdatingBot] = useState<string | null>(null);
 
   const fetchAssetData = async (exchange: string, setAssetData: any, setIsLoading: any) => {
-    // 대소문자 구분 없이 연결된 거래소 확인
-    const isConnected = connectedExchanges.some(ex => ex.toUpperCase() === exchange.toUpperCase());
-    if (!isConnected) {
-      setAssetData(null);
-      return;
-    }
-    
-    setIsLoading(true);
-    try {
-      const res = await axios.get(`/api/user/credentials/assets?exchange=${exchange}`);
-      // 백엔드 응답 구조: { usdKrw, data: { mainBalance, krwBalance, balances, ... }, exchange }
-      if (res.data && res.data.data) {
-        setAssetData(res.data.data);
-      } else {
-        setAssetData(null);
-      }
-    } catch (e) {
-      setAssetData(null);
-    } finally {
-      setIsLoading(false);
-    }
+    // ... (existing code)
   };
 
   const fetchOrders = async () => {
@@ -75,6 +59,35 @@ const MyPage: React.FC<MyPageProps> = ({
       const res = await axios.get('/api/user/credentials/orders');
       setTradeOrders(res.data);
     } catch (e) {}
+  };
+
+  const fetchSubscribedBots = async () => {
+    try {
+      const res = await axios.get('/api/user/subscriptions');
+      setSubscribedBots(res.data);
+    } catch (e) {}
+  };
+
+  const toggleBotActive = async (symbol: string) => {
+    try {
+      await axios.post(`/api/user/subscriptions/${symbol}/toggle`);
+      fetchSubscribedBots();
+    } catch (e) {
+      alert('봇 상태 변경에 실패했습니다.');
+    }
+  };
+
+  const updateBotSettings = async (symbol: string, targetRatio: number, tradeAmount: number) => {
+    setIsUpdatingBot(symbol);
+    try {
+      await axios.put(`/api/user/subscriptions/${symbol}`, { targetRatio, tradeAmount });
+      alert(`${symbol} 봇 설정이 저장되었습니다.`);
+      fetchSubscribedBots();
+    } catch (e) {
+      alert('봇 설정 저장에 실패했습니다.');
+    } finally {
+      setIsUpdatingBot(null);
+    }
   };
 
   useEffect(() => {
@@ -87,6 +100,7 @@ const MyPage: React.FC<MyPageProps> = ({
 
   useEffect(() => {
     fetchOrders();
+    fetchSubscribedBots();
   }, [connectedExchanges]);
 
   const renderAssetBox = (exchange: string, data: any, isLoading: boolean, isDomestic: boolean) => {
@@ -226,6 +240,90 @@ const MyPage: React.FC<MyPageProps> = ({
                 <button onClick={() => handleDeleteExchange(ex)} style={{ padding: '0.3rem 0.8rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '0.4rem', cursor: 'pointer', fontSize: '0.75rem' }}>연동 해제</button>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* 자동매매 봇 설정 섹션 추가 */}
+        <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '2rem', marginTop: '2rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1.5rem' }}>
+            <Settings size={20} color="var(--accent-color)" />
+            <h4 style={{ margin: 0 }}>구독 중인 자동매매 봇</h4>
+          </div>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {subscribedBots.length > 0 ? subscribedBots.map((bot) => (
+              <div key={bot.symbol} style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.03)', borderRadius: '1rem', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+                    <div style={{ padding: '0.4rem 0.8rem', background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-color)', borderRadius: '0.5rem', fontWeight: 800 }}>{bot.symbol}</div>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{bot.domesticExchange} ↔ {bot.foreignExchange}</span>
+                  </div>
+                  <button 
+                    onClick={() => toggleBotActive(bot.symbol)}
+                    style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '0.5rem', 
+                      padding: '0.5rem 1rem', 
+                      borderRadius: '0.5rem', 
+                      border: 'none', 
+                      background: bot.isActive ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)', 
+                      color: bot.isActive ? '#ef4444' : '#10b981', 
+                      fontWeight: 700, 
+                      cursor: 'pointer' 
+                    }}
+                  >
+                    {bot.isActive ? <Square size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}
+                    {bot.isActive ? '중지' : '시작'}
+                  </button>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px', gap: '1rem', alignItems: 'flex-end' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>목표 차익 (%)</label>
+                    <input 
+                      type="number" 
+                      defaultValue={bot.targetRatio} 
+                      onBlur={(e) => bot.targetRatio = parseFloat(e.target.value)}
+                      style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-color)', color: 'white', padding: '0.6rem', borderRadius: '0.4rem', outline: 'none' }} 
+                    />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>회당 매매 금액 (USDT)</label>
+                    <input 
+                      type="number" 
+                      defaultValue={bot.tradeAmount} 
+                      onBlur={(e) => bot.tradeAmount = parseFloat(e.target.value)}
+                      style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border-color)', color: 'white', padding: '0.6rem', borderRadius: '0.4rem', outline: 'none' }} 
+                    />
+                  </div>
+                  <button 
+                    onClick={() => updateBotSettings(bot.symbol, bot.targetRatio, bot.tradeAmount)}
+                    disabled={isUpdatingBot === bot.symbol}
+                    style={{ 
+                      height: '38px', 
+                      background: 'rgba(56, 189, 248, 0.1)', 
+                      color: 'var(--accent-color)', 
+                      border: '1px solid rgba(56, 189, 248, 0.2)', 
+                      borderRadius: '0.4rem', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      gap: '0.4rem', 
+                      cursor: 'pointer',
+                      fontWeight: 600
+                    }}
+                  >
+                    <Save size={14} className={isUpdatingBot === bot.symbol ? 'animate-spin' : ''} />
+                    저장
+                  </button>
+                </div>
+              </div>
+            )) : (
+              <div style={{ textAlign: 'center', padding: '2rem', background: 'rgba(0,0,0,0.1)', borderRadius: '1rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                구독 중인 봇이 없습니다. 차익거래 페이지에서 봇을 구독해 주세요.
+              </div>
+            )}
           </div>
         </div>
       </div>

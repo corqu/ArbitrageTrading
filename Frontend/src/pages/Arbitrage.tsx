@@ -24,8 +24,8 @@ const Arbitrage: React.FC<ArbitrageProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
-  const [globalEntryKimp, setGlobalEntryKimp] = useState<number>(0.5);
-  const [globalExitKimp, setGlobalExitKimp] = useState<number>(2.0);
+  const [globalEntryKimp, setGlobalEntryKimp] = useState<string | number>(0.5);
+  const [globalExitKimp, setGlobalExitKimp] = useState<string | number>(2.0);
   const [amountKrw, setAmountKrw] = useState<number>(1000000); 
   const [leverage, setLeverage] = useState<number>(3); 
   const [backtestResults, setBacktestResults] = useState<{[key: string]: any}>({});
@@ -209,20 +209,48 @@ const Arbitrage: React.FC<ArbitrageProps> = ({
         </div>
       </header>
 
-      <div className="card" style={{ marginBottom: '2rem', padding: '1.5rem 2rem', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.2rem' }}>
+      <div className="card" style={{ marginBottom: '2rem', padding: '1.5rem 2.5rem', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
           <Target size={20} color="var(--accent-color)" />
           <h3 style={{ margin: 0 }}>전략 및 로봇 설정</h3>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1.5rem', alignItems: 'flex-end' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '2rem', alignItems: 'flex-end' }}>
             <div className="input-group">
               <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', display: 'block' }}>진입 김프 (%)</label>
-              <input type="number" step="0.1" value={globalEntryKimp} onChange={(e) => setGlobalEntryKimp(parseFloat(e.target.value))} style={{ width: '100%', padding: '0.6rem', borderRadius: '0.4rem', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white' }} />
+              <input 
+                type="text" 
+                value={globalEntryKimp} 
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === '' || val === '-' || /^-?\d*\.?\d*$/.test(val)) {
+                    setGlobalEntryKimp(val);
+                  }
+                }}
+                onBlur={() => {
+                  const num = parseFloat(globalEntryKimp.toString());
+                  setGlobalEntryKimp(isNaN(num) ? 0 : num);
+                }}
+                style={{ width: '100%', padding: '0.6rem', borderRadius: '0.4rem', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white' }} 
+              />
             </div>
             <div className="input-group">
               <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', display: 'block' }}>탈출 김프 (%)</label>
-              <input type="number" step="0.1" value={globalExitKimp} onChange={(e) => setGlobalExitKimp(parseFloat(e.target.value))} style={{ width: '100%', padding: '0.6rem', borderRadius: '0.4rem', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white' }} />
+              <input 
+                type="text" 
+                value={globalExitKimp} 
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === '' || val === '-' || /^-?\d*\.?\d*$/.test(val)) {
+                    setGlobalExitKimp(val);
+                  }
+                }}
+                onBlur={() => {
+                  const num = parseFloat(globalExitKimp.toString());
+                  setGlobalExitKimp(isNaN(num) ? 0 : num);
+                }}
+                style={{ width: '100%', padding: '0.6rem', borderRadius: '0.4rem', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white' }} 
+              />
             </div>
             <div className="input-group">
               <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', display: 'block' }}>투자 금액 (KRW)</label>
@@ -231,19 +259,19 @@ const Arbitrage: React.FC<ArbitrageProps> = ({
                   type="text" 
                   value={formatNumber(amountKrw)} 
                   onChange={(e) => setAmountKrw(parseNumber(e.target.value))} 
-                  style={{ width: '100%', padding: '0.6rem 2.4rem 0.6rem 0.6rem', borderRadius: '0.4rem', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white', textAlign: 'right' }} 
+                  style={{ width: '100%', padding: '0.6rem 2.8rem 0.6rem 0.6rem', borderRadius: '0.4rem', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white', textAlign: 'right', boxSizing: 'border-box' }} 
                 />
                 <span style={{ position: 'absolute', right: '0.8rem', top: '50%', transform: 'translateY(-50%)', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>원</span>
               </div>
             </div>
             <div className="input-group">
               <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', display: 'block' }}>레버리지 (배)</label>
-              <select value={leverage} onChange={(e) => setLeverage(parseInt(e.target.value))} style={{ width: '100%', padding: '0.6rem', borderRadius: '0.4rem', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white' }}>
-                {[1, 3, 5, 10, 20].map(v => <option key={v} value={v}>{v}배</option>)}
+              <select value={leverage} onChange={(e) => setLeverage(parseInt(e.target.value))} style={{ width: '100%', padding: '0.6rem', borderRadius: '0.4rem', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white', cursor: 'pointer' }}>
+                {[1, 3, 5, 10, 20].map(v => <option key={v} value={v} style={{ background: '#1e293b' }}>{v}배</option>)}
               </select>
             </div>
-            <button className="btn-primary" onClick={runAnalysisForAll} style={{ height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: 700 }}>
-              <Calculator size={16} /> <span>전체 분석 갱신</span>
+            <button className="btn-primary" onClick={runAnalysisForAll} style={{ height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: 700, padding: '0 1rem' }}>
+              <Calculator size={16} /> <span style={{ whiteSpace: 'nowrap' }}>전체 분석</span>
             </button>
           </div>
         </div>

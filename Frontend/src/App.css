@@ -21,11 +21,13 @@ body {
   font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   font-size: 14px; /* 기본 폰트 크기 축소 */
+  overflow-x: auto; /* 가로 스크롤 허용 */
 }
 
 .app-container {
   display: flex;
   min-height: 100vh;
+  min-width: 1200px; /* 최소 너비 고정 */
 }
 
 /* 사이드바 위치 및 스타일 수정 */
@@ -309,4 +311,33 @@ td {
   font-size: 1rem;
   font-weight: 700;
   color: var(--accent-color);
+}
+
+/* 사이드바 하단 영역 스타일 추가 */
+.sidebar-footer {
+  padding-bottom: 1.5rem;
+}
+
+.status-group {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0 1rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.status-dot.online {
+  background-color: var(--success);
+  box-shadow: 0 0 8px var(--success);
+}
+
+.status-dot.offline {
+  background-color: var(--text-secondary);
 }

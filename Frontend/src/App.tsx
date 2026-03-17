@@ -229,19 +229,17 @@ const App: React.FC = () => {
 
         <main className="main-content">
           <Routes>
-            <Route
-              path="/"
-              element={
-                <Dashboard
-                  kimpList={kimpList}
-                  fetchData={fetchData}
-                  selectedDomesticExchange={selectedDomesticExchange}
-                  setSelectedDomesticExchange={setSelectedDomesticExchange}
-                  selectedForeignExchange={selectedForeignExchange}
-                  setSelectedForeignExchange={setSelectedForeignExchange}
-                />
-              }
-            />
+            <Route path="/" element={
+              <Dashboard 
+                kimpList={kimpList} 
+                fetchData={fetchData} 
+                selectedDomesticExchange={selectedDomesticExchange}
+                setSelectedDomesticExchange={setSelectedDomesticExchange}
+                selectedForeignExchange={selectedForeignExchange}
+                setSelectedForeignExchange={setSelectedForeignExchange}
+                isConnected={isConnected}
+              />
+            } />
             <Route
               path="/arbitrage"
               element={

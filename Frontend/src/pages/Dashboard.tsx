@@ -13,6 +13,7 @@ interface DashboardProps {
   setSelectedDomesticExchange: (ex: 'UPBIT' | 'BITHUMB') => void;
   selectedForeignExchange: 'BINANCE' | 'BYBIT';
   setSelectedForeignExchange: (ex: 'BINANCE' | 'BYBIT') => void;
+  isConnected: boolean;
 }
 
 type SortKey = 'symbol' | 'ratio' | 'fundingRate' | 'tradeVolume' | 'adjustedApr';
@@ -21,7 +22,8 @@ type SortOrder = 'asc' | 'desc';
 const Dashboard: React.FC<DashboardProps> = ({ 
   kimpList, fetchData, 
   selectedDomesticExchange, setSelectedDomesticExchange,
-  selectedForeignExchange, setSelectedForeignExchange 
+  selectedForeignExchange, setSelectedForeignExchange,
+  isConnected
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('tradeVolume');
@@ -153,7 +155,12 @@ const Dashboard: React.FC<DashboardProps> = ({
       <div className="summary-grid">
         <div className="summary-card"><span className="label">추적 중인 코인</span><span className="value">{filteredList.length}개</span></div>
         <div className="summary-card"><span className="label">평균 김치 프리미엄</span><span className="value">{(filteredList.reduce((acc, curr) => acc + (curr.ratio || 0), 0) / (filteredList.length || 1)).toFixed(2)}%</span></div>
-        <div className="summary-card"><span className="label">실시간 연동</span><span className="value" style={{ color: 'var(--success)' }}>정상</span></div>
+        <div className="summary-card">
+          <span className="label">실시간 연동</span>
+          <span className="value" style={{ color: isConnected ? 'var(--success)' : 'var(--danger)' }}>
+            {isConnected ? '정상' : '연결 끊김'}
+          </span>
+        </div>
       </div>
 
       <section className="card">
