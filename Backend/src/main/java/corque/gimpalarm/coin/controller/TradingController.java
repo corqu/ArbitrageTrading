@@ -2,8 +2,10 @@ package corque.gimpalarm.coin.controller;
 
 import corque.gimpalarm.coin.dto.TradingRequest;
 import corque.gimpalarm.coin.service.TradingBotService;
+import corque.gimpalarm.user.domain.UserPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -19,8 +21,10 @@ public class TradingController {
      * 매매 실행 (START / STOP)
      */
     @PostMapping("/execute")
-    public ResponseEntity<String> executeTrade(@RequestBody TradingRequest request) {
-        String result = tradingBotService.executeTrade(request);
+    public ResponseEntity<String> executeTrade(
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
+            @RequestBody TradingRequest request) {
+        String result = tradingBotService.executeTradeForUser(userPrincipal.getId(), request);
         return ResponseEntity.ok(result);
     }
 

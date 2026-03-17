@@ -40,8 +40,8 @@ public class UserBotService {
     }
 
     @Transactional
-    public UserBotResponseDto subscribeBot(String email, TradingRequest request) {
-        User user = userRepository.findByEmail(email)
+    public UserBotResponseDto subscribeBot(Long userId, TradingRequest request) {
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         UserBot userBot = UserBot.builder()
@@ -62,14 +62,14 @@ public class UserBotService {
         UserBot savedBot = userBotRepository.save(userBot);
         
         // 실시간 매매 서비스에 봇 실행 요청
-        tradingBotService.executeTradeForUser(user, request);
+        tradingBotService.executeTradeForUser(userId, request);
 
         return convertToDto(savedBot);
     }
 
     @Transactional
-    public UserBotResponseDto updateBot(String email, Long botId, TradingRequest request) {
-        User user = userRepository.findByEmail(email)
+    public UserBotResponseDto updateBot(Long userId, Long botId, TradingRequest request) {
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         
         UserBot userBot = userBotRepository.findByIdAndUser(botId, user)
@@ -85,7 +85,7 @@ public class UserBotService {
         userBot.setExitKimp(request.getExitKimp());
         
         // 다시 실행
-        tradingBotService.executeTradeForUser(user, request);
+        tradingBotService.executeTradeForUser(userId, request);
 
         return convertToDto(userBot);
     }
@@ -111,7 +111,7 @@ public class UserBotService {
         stopRequest.setForeignExchange(userBot.getForeignExchange());
         stopRequest.setAction("STOP");
         
-        tradingBotService.executeTradeForUser(user, stopRequest);
+        tradingBotService.executeTradeForUser(user.getId(), stopRequest);
     }
 
     private UserBotResponseDto convertToDto(UserBot userBot) {

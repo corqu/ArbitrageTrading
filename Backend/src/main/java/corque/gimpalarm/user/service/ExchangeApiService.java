@@ -464,6 +464,120 @@ public class ExchangeApiService {
         }
     }
 
+    /**
+     * 업비트 주문 상세 조회
+     */
+    public Map<String, Object> getOrderUpbit(Long userId, String orderId) {
+        UserCredential credential = getCredential(userId, "UPBIT");
+        String accessKey = encryptionUtil.decrypt(credential.getApiKey()).trim();
+        String secretKey = encryptionUtil.decrypt(credential.getApiSecret()).trim();
+
+        String queryString = "uuid=" + orderId;
+        try {
+            String jwtToken = createUpbitJwt(accessKey, secretKey, queryString);
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Authorization", "Bearer " + jwtToken);
+            HttpEntity<String> entity = new HttpEntity<>(headers);
+
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    "https://api.upbit.com/v1/order?" + queryString, HttpMethod.GET, entity, Map.class);
+            return response.getBody();
+        } catch (Exception e) {
+            log.error("Upbit GetOrder Error: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 업비트 주문 취소
+     */
+    public Map<String, Object> cancelOrderUpbit(Long userId, String orderId) {
+        UserCredential credential = getCredential(userId, "UPBIT");
+        String accessKey = encryptionUtil.decrypt(credential.getApiKey()).trim();
+        String secretKey = encryptionUtil.decrypt(credential.getApiSecret()).trim();
+
+        String queryString = "uuid=" + orderId;
+        try {
+            String jwtToken = createUpbitJwt(accessKey, secretKey, queryString);
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Authorization", "Bearer " + jwtToken);
+            HttpEntity<String> entity = new HttpEntity<>(headers);
+
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    "https://api.upbit.com/v1/order?" + queryString, HttpMethod.DELETE, entity, Map.class);
+            return response.getBody();
+        } catch (Exception e) {
+            log.error("Upbit Cancel Error: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 바이낸스 선물 주문 상세 조회
+     */
+    public Map<String, Object> getOrderBinance(Long userId, String symbol, String orderId) {
+        UserCredential credential = getCredential(userId, "BINANCE");
+        String accessKey = encryptionUtil.decrypt(credential.getApiKey()).trim();
+        String secretKey = encryptionUtil.decrypt(credential.getApiSecret()).trim();
+
+        long timestamp = System.currentTimeMillis();
+        String queryString = "symbol=" + symbol.toUpperCase() + "USDT&origClientOrderId=" + orderId + "&timestamp=" + timestamp;
+        String signature = hmacSha256(secretKey, queryString);
+        String url = "https://fapi.binance.com/fapi/v1/order?" + queryString + "&signature=" + signature;
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-MBX-APIKEY", accessKey);
+        HttpEntity<String> entity = new HttpEntity<>(headers);
+
+        try {
+            ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, entity, Map.class);
+            return response.getBody();
+        } catch (Exception e) {
+            log.error("Binance GetOrder Error: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 바이낸스 선물 주문 취소
+     */
+    public Map<String, Object> cancelOrderBinance(Long userId, String symbol, String orderId) {
+        UserCredential credential = getCredential(userId, "BINANCE");
+        String accessKey = encryptionUtil.decrypt(credential.getApiKey()).trim();
+        String secretKey = encryptionUtil.decrypt(credential.getApiSecret()).trim();
+
+        long timestamp = System.currentTimeMillis();
+        String queryString = "symbol=" + symbol.toUpperCase() + "USDT&origClientOrderId=" + orderId + "&timestamp=" + timestamp;
+        String signature = hmacSha256(secretKey, queryString);
+        String url = "https://fapi.binance.com/fapi/v1/order?" + queryString + "&signature=" + signature;
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-MBX-APIKEY", accessKey);
+        HttpEntity<String> entity = new HttpEntity<>(headers);
+
+        try {
+            ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.DELETE, entity, Map.class);
+            return response.getBody();
+        } catch (Exception e) {
+            log.error("Binance Cancel Error: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private String createUpbitJwt(String accessKey, String secretKey, String queryString) throws Exception {
+        MessageDigest md = MessageDigest.getInstance("SHA-512");
+        md.update(queryString.getBytes("UTF-8"));
+        String queryHash = String.format("%0128x", new BigInteger(1, md.digest()));
+
+        Algorithm algorithm = Algorithm.HMAC256(secretKey);
+        return JWT.create()
+                .withClaim("access_key", accessKey)
+                .withClaim("nonce", UUID.randomUUID().toString())
+                .withClaim("query_hash", queryHash)
+                .withClaim("query_hash_alg", "SHA512")
+                .sign(algorithm);
+    }
+
     private UserCredential getCredential(Long userId, String exchange) {
         return credentialRepository.findByUserId(userId).stream()
                 .filter(c -> c.getExchange().equalsIgnoreCase(exchange))

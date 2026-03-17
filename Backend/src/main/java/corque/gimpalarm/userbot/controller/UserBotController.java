@@ -1,6 +1,7 @@
 package corque.gimpalarm.userbot.controller;
 
 import corque.gimpalarm.coin.dto.TradingRequest;
+import corque.gimpalarm.user.domain.UserPrincipal;
 import corque.gimpalarm.userbot.dto.UserBotResponseDto;
 import corque.gimpalarm.userbot.service.UserBotService;
 import lombok.RequiredArgsConstructor;
@@ -25,17 +26,17 @@ public class UserBotController {
 
     @PostMapping
     public ResponseEntity<UserBotResponseDto> subscribeBot(
-            @AuthenticationPrincipal UserDetails userDetails,
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
             @RequestBody TradingRequest request) {
-        return ResponseEntity.ok(userBotService.subscribeBot(userDetails.getUsername(), request));
+        return ResponseEntity.ok(userBotService.subscribeBot(userPrincipal.getId(), request));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<UserBotResponseDto> updateBot(
-            @AuthenticationPrincipal UserDetails userDetails,
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
             @PathVariable Long id,
             @RequestBody TradingRequest request) {
-        return ResponseEntity.ok(userBotService.updateBot(userDetails.getUsername(), id, request));
+        return ResponseEntity.ok(userBotService.updateBot(userPrincipal.getId(), id, request));
     }
 
     @DeleteMapping("/{id}")

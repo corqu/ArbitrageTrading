@@ -79,7 +79,6 @@ public class KimpService {
         return result;
     }
 
-    // 기존 calculateAllKimp는 하위 호환성을 위해 유지하거나 호출부 수정 필요
     public List<KimpResponseDto> calculateAllKimp() {
         Map<String, List<KimpResponseDto>> pairs = calculateAllPairs();
         List<KimpResponseDto> all = new ArrayList<>();
