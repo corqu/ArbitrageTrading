@@ -33,8 +33,6 @@ public class UserBot extends BaseEntity {
     @Column(nullable = false)
     private double amountKrw;
 
-    private Double limitPrice;
-
     @Column(nullable = false)
     private int leverage;
 
@@ -49,4 +47,9 @@ public class UserBot extends BaseEntity {
     @Builder.Default
     @Column(nullable = false)
     private boolean isActive = true;
+
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private UserBotStatus status = UserBotStatus.WAITING;
 }

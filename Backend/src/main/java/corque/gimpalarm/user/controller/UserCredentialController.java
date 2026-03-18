@@ -1,10 +1,12 @@
 package corque.gimpalarm.user.controller;
 
+import corque.gimpalarm.coin.dto.PriceManager;
 import corque.gimpalarm.user.domain.User;
 import corque.gimpalarm.user.domain.UserCredential;
 import corque.gimpalarm.user.domain.UserPrincipal;
 import corque.gimpalarm.user.dto.UserCredentialRequestDto;
 import corque.gimpalarm.user.repository.UserRepository;
+import corque.gimpalarm.user.service.ExchangeApiService;
 import corque.gimpalarm.user.service.UserCredentialService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -22,8 +24,8 @@ import java.util.stream.Collectors;
 public class UserCredentialController {
 
     private final UserCredentialService userCredentialService;
-    private final corque.gimpalarm.user.service.ExchangeApiService exchangeApiService;
-    private final corque.gimpalarm.coin.dto.PriceManager priceManager;
+    private final ExchangeApiService exchangeApiService;
+    private final PriceManager priceManager;
 
     @GetMapping("/list")
     public ResponseEntity<List<String>> list(@AuthenticationPrincipal UserPrincipal userPrincipal) {
@@ -44,9 +46,8 @@ public class UserCredentialController {
         if (userPrincipal == null) {
             return ResponseEntity.status(401).build();
         }
-        
-        requestDto.setUserId(userPrincipal.getId());
-        Long credentialId = userCredentialService.registerCredential(requestDto);
+
+        Long credentialId = userCredentialService.registerCredential(userPrincipal.getId(), requestDto);
         
         return ResponseEntity.ok(credentialId);
     }

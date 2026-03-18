@@ -7,6 +7,7 @@ import io.jsonwebtoken.security.Keys;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
@@ -74,8 +75,8 @@ public class JwtTokenProvider {
         }
     }
 
-    public org.springframework.http.ResponseCookie createAccessTokenCookie(String token) {
-        return org.springframework.http.ResponseCookie.from("accessToken", token)
+    public ResponseCookie createAccessTokenCookie(String token) {
+        return ResponseCookie.from("accessToken", token)
                 .httpOnly(true)
                 .secure(false)
                 .path("/")
@@ -84,8 +85,8 @@ public class JwtTokenProvider {
                 .build();
     }
 
-    public org.springframework.http.ResponseCookie createRefreshTokenCookie(String token) {
-        return org.springframework.http.ResponseCookie.from("refreshToken", token)
+    public ResponseCookie createRefreshTokenCookie(String token) {
+        return ResponseCookie.from("refreshToken", token)
                 .httpOnly(true)
                 .secure(false)
                 .path("/")
@@ -94,8 +95,8 @@ public class JwtTokenProvider {
                 .build();
     }
 
-    public org.springframework.http.ResponseCookie createLogoutCookie(String name) {
-        return org.springframework.http.ResponseCookie.from(name, "")
+    public ResponseCookie createLogoutCookie(String name) {
+        return ResponseCookie.from(name, "")
                 .httpOnly(true)
                 .secure(false)
                 .path("/")

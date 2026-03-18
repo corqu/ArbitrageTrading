@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import corque.gimpalarm.coin.dto.BithumbTickerDto;
 import corque.gimpalarm.coin.dto.PriceManager;
 import corque.gimpalarm.coin.repository.SupportedCoinRepository;
-import corque.gimpalarm.common.config.CoinConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -27,7 +26,6 @@ public class BithumbWebSocketService {
     private final String BITHUMB_WSS_URL = "wss://pubwss.bithumb.com/pub/ws";
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final PriceManager priceManager;
-    private final CoinConfig coinConfig;
     private final SupportedCoinRepository coinRepository;
 
     @EventListener(ApplicationReadyEvent.class)

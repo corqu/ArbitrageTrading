@@ -48,9 +48,8 @@ public class KimpController {
                         .foreignExchange(h.getForeignExchange())
                         .ratio(h.getRatio())
                         .fundingRate(h.getFundingRate())
-                        .adjustedApr(h.getAdjustedApr())
-                        .liquidationPrice(h.getLiquidationPrice())
                         .tradeVolume(h.getTradeVolume())
+                        .time(h.getTime())
                         .build())
                 .collect(Collectors.toList());
         return ResponseEntity.ok(dtoList);

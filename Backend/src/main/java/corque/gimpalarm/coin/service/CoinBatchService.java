@@ -2,7 +2,6 @@ package corque.gimpalarm.coin.service;
 
 import corque.gimpalarm.coin.domain.SupportedCoin;
 import corque.gimpalarm.coin.repository.SupportedCoinRepository;
-import corque.gimpalarm.common.config.CoinConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;

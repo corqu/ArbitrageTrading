@@ -28,6 +28,8 @@ const Arbitrage: React.FC<ArbitrageProps> = ({
   const [globalExitKimp, setGlobalExitKimp] = useState<string | number>(2.0);
   const [amountKrw, setAmountKrw] = useState<number>(1000000); 
   const [leverage, setLeverage] = useState<number>(3); 
+  const [stopLossPercent, setStopLossPercent] = useState<number>(5.0);
+  const [takeProfitPercent, setTakeProfitPercent] = useState<number>(10.0);
   const [backtestResults, setBacktestResults] = useState<{[key: string]: any}>({});
   const [loadingBacktest, setLoadingBacktest] = useState<{[key: string]: boolean}>({});
   const [botStatus, setBotStatus] = useState<{[key: string]: boolean}>({});
@@ -104,17 +106,21 @@ const Arbitrage: React.FC<ArbitrageProps> = ({
     const key = `${symbol}:${selectedDomesticExchange}:${selectedForeignExchange}`;
     setTradingLoading(prev => ({ ...prev, [key]: true }));
     try {
-      const response = await axios.post('/api/trading/execute', {
+      const endpoint = action === 'START_AUTO' ? '/api/user-bots' : '/api/trading/execute';
+      const response = await axios.post(endpoint, {
         symbol,
         domesticExchange: selectedDomesticExchange,
         foreignExchange: selectedForeignExchange,
         amountKrw,
         leverage,
-        entryKimp: globalEntryKimp,
-        exitKimp: globalExitKimp,
+        entryKimp: parseFloat(globalEntryKimp.toString()),
+        exitKimp: parseFloat(globalExitKimp.toString()),
+        stopLossPercent,
+        takeProfitPercent,
         action
       });
-      alert(response.data);
+      const message = typeof response.data === 'string' ? response.data : response.data.message || '요청이 완료되었습니다.';
+      alert(message);
       fetchBotStatus();
     } catch (error: any) {
       alert(error.response?.data || '매매 요청 실패');
@@ -269,6 +275,14 @@ const Arbitrage: React.FC<ArbitrageProps> = ({
               <select value={leverage} onChange={(e) => setLeverage(parseInt(e.target.value))} style={{ width: '100%', padding: '0.6rem', borderRadius: '0.4rem', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white', cursor: 'pointer' }}>
                 {[1, 3, 5, 10, 20].map(v => <option key={v} value={v} style={{ background: '#1e293b' }}>{v}배</option>)}
               </select>
+            </div>
+            <div className="input-group">
+              <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', display: 'block' }}>익절 (%)</label>
+              <input type="number" step="0.5" value={takeProfitPercent} onChange={(e) => setTakeProfitPercent(parseFloat(e.target.value))} style={{ width: '100%', padding: '0.6rem', borderRadius: '0.4rem', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white' }} />
+            </div>
+            <div className="input-group">
+              <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', display: 'block' }}>손절 (%)</label>
+              <input type="number" step="0.5" value={stopLossPercent} onChange={(e) => setStopLossPercent(parseFloat(e.target.value))} style={{ width: '100%', padding: '0.6rem', borderRadius: '0.4rem', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: 'white' }} />
             </div>
             <button className="btn-primary" onClick={runAnalysisForAll} style={{ height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: 700, padding: '0 1rem' }}>
               <Calculator size={16} /> <span style={{ whiteSpace: 'nowrap' }}>전체 분석</span>

@@ -5,7 +5,6 @@ import corque.gimpalarm.coin.dto.binance.BinanceFuturesResponse;
 import corque.gimpalarm.coin.dto.binance.BinanceFuturesTickerDto;
 import corque.gimpalarm.coin.dto.PriceManager;
 import corque.gimpalarm.coin.repository.SupportedCoinRepository;
-import corque.gimpalarm.common.config.CoinConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -26,7 +25,6 @@ public class BinanceFuturesWebSocketService {
     private final String BINANCE_FUTURES_WSS_URL = "wss://fstream.binance.com/ws"; // Base URL로 변경
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final PriceManager priceManager;
-    private final CoinConfig coinConfig;
     private final SupportedCoinRepository coinRepository;
 
     public void connect() {

@@ -1,14 +1,18 @@
 package corque.gimpalarm.coin.service;
 
+import corque.gimpalarm.coin.domain.BotStatus;
 import corque.gimpalarm.coin.dto.KimpResponseDto;
+import corque.gimpalarm.coin.dto.PriceChangedEvent;
 import corque.gimpalarm.coin.dto.PriceManager;
 import corque.gimpalarm.coin.dto.TradingRequest;
-import corque.gimpalarm.common.config.CoinConfig;
-import corque.gimpalarm.user.repository.UserCredentialRepository;
+import corque.gimpalarm.tradeorder.domain.TradeOrder;
+import corque.gimpalarm.tradeorder.service.TradeOrderService;
+import corque.gimpalarm.user.domain.User;
 import corque.gimpalarm.user.repository.UserRepository;
 import corque.gimpalarm.user.service.ExchangeApiService;
 import corque.gimpalarm.userbot.domain.UserBot;
-import jakarta.annotation.PostConstruct;
+import corque.gimpalarm.userbot.domain.UserBotStatus;
+import corque.gimpalarm.userbot.repository.UserBotRepository;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -17,8 +21,11 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -26,20 +33,17 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 public class TradingBotService {
 
-    private final CoinConfig coinConfig;
+    private static final String ENTRY_DOMESTIC = "ENTRY_DOMESTIC";
+    private static final String ENTRY_FOREIGN = "ENTRY_FOREIGN";
+
     private final KimpService kimpService;
-    private final UserCredentialRepository userCredentialRepository;
     private final UserRepository userRepository;
+    private final UserBotRepository userBotRepository;
     private final ExchangeApiService exchangeApiService;
     private final PriceManager priceManager;
+    private final TradeOrderService tradeOrderService;
 
-    // 봇의 상태 정의
-    public enum BotStatus {
-        WAITING,    // 진입 김프 대기 중
-        ENTERING,   // 국내 매수 중 (체결 감시)
-        HOLDING,    // 탈출 김프 대기 중 (숏 헷지 완료 상태)
-        EXITING     // 탈출 진행 중 (국내 매도 + 숏 청산)
-    }
+
 
     @Data
     @AllArgsConstructor
@@ -48,28 +52,28 @@ public class TradingBotService {
         private BotStatus status;
         private Long userId;
         private String domesticOrderId;
+        private String foreignOrderId;
         private double totalTargetQty;
         private double filledQty;
         private double hedgedQty;
         private Double slPrice;
         private Double tpPrice;
+        private LocalDateTime entryTime;
     }
 
     private final Map<String, ActiveTrade> activeBots = new ConcurrentHashMap<>();
 
-    @PostConstruct
-    public void init() {
-        log.info(">>> [SYSTEM] TradingBotService 초기화 완료");
-    }
-
     public void loadActiveBots(List<UserBot> activeUserBots) {
         for (UserBot bot : activeUserBots) {
+            if (bot.getStatus() == UserBotStatus.STOPPED) {
+                continue;
+            }
+
             TradingRequest request = new TradingRequest();
             request.setSymbol(bot.getSymbol());
             request.setDomesticExchange(bot.getDomesticExchange());
             request.setForeignExchange(bot.getForeignExchange());
             request.setAmountKrw(bot.getAmountKrw());
-            request.setLimitPrice(bot.getLimitPrice());
             request.setLeverage(bot.getLeverage());
             request.setAction(bot.getAction());
             request.setEntryKimp(bot.getEntryKimp());
@@ -78,90 +82,112 @@ public class TradingBotService {
             request.setTakeProfitPercent(bot.getTakeProfitPercent());
 
             String botKey = generateBotKey(bot.getUser().getId(), request);
-            activeBots.put(botKey, new ActiveTrade(request, BotStatus.WAITING, bot.getUser().getId(), null, 0.0, 0.0, 0.0, null, null));
-            log.info(">>> [SYSTEM] 활성 봇 복구: {}", botKey);
+            ActiveTrade restoredTrade = restoreActiveTrade(bot.getUser().getId(), botKey, request);
+            activeBots.put(botKey, restoredTrade);
+            updateUserBotStatus(bot.getUser().getId(), request, restoredTrade.getStatus());
         }
+    }
+
+    private ActiveTrade restoreActiveTrade(Long userId, String botKey, TradingRequest request) {
+        Optional<TradeOrder> domesticOrder = tradeOrderService.getLatestOrder(botKey, ENTRY_DOMESTIC);
+        Optional<TradeOrder> foreignOrder = tradeOrderService.getLatestOrder(botKey, ENTRY_FOREIGN);
+
+        if (domesticOrder.isPresent() && foreignOrder.isPresent()) {
+            double domesticFilled = valueOrZero(domesticOrder.get().getExecutedQty());
+            double foreignFilled = valueOrZero(foreignOrder.get().getExecutedQty());
+            double minQty = Math.min(domesticFilled, foreignFilled);
+
+            if (isFilled(domesticOrder.get()) && isFilled(foreignOrder.get()) && minQty > 0) {
+                return new ActiveTrade(
+                        request,
+                        BotStatus.HOLDING,
+                        userId,
+                        domesticOrder.get().getExchangeOrderId(),
+                        foreignOrder.get().getExchangeOrderId(),
+                        valueOrZero(domesticOrder.get().getRequestedQty()),
+                        minQty,
+                        minQty,
+                        null,
+                        null,
+                        domesticOrder.get().getCreatedAt()
+                );
+            }
+
+            if (!isFinalState(domesticOrder.get()) || !isFinalState(foreignOrder.get())) {
+                return new ActiveTrade(
+                        request,
+                        BotStatus.ENTERING,
+                        userId,
+                        domesticOrder.get().getExchangeOrderId(),
+                        foreignOrder.get().getExchangeOrderId(),
+                        valueOrZero(domesticOrder.get().getRequestedQty()),
+                        minQty,
+                        minQty,
+                        null,
+                        null,
+                        domesticOrder.get().getCreatedAt() != null ? domesticOrder.get().getCreatedAt() : LocalDateTime.now()
+                );
+            }
+        }
+
+        return new ActiveTrade(request, BotStatus.WAITING, userId, null, null, 0.0, 0.0, 0.0, null, null, null);
+    }
+
+    private boolean isFilled(TradeOrder order) {
+        return order.getStatus() != null && "FILLED".equalsIgnoreCase(order.getStatus());
+    }
+
+    private boolean isFinalState(TradeOrder order) {
+        if (order.getStatus() == null) {
+            return false;
+        }
+        // 영국식 표기 혹은 레거시 코드 방어용 CANCELLED 추가
+        return switch (order.getStatus().toUpperCase()) {
+            case "FILLED", "CANCELED", "CANCELLED", "DONE" -> true;
+            default -> false;
+        };
+    }
+
+    private double valueOrZero(Double value) {
+        return value != null ? value : 0.0;
     }
 
     private String generateBotKey(Long userId, TradingRequest request) {
-        return String.format("%d:%s:%s:%s",
-                userId,
-                request.getSymbol().toUpperCase(),
-                request.getDomesticExchange().toUpperCase(),
-                request.getForeignExchange().toUpperCase());
+        return String.format("%d:%s:%s:%s", userId, request.getSymbol().toUpperCase(),
+                request.getDomesticExchange().toUpperCase(), request.getForeignExchange().toUpperCase());
     }
 
-    public String executeTrade(TradingRequest request) {
-        org.springframework.security.core.Authentication auth = 
-            org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-        
-        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getName())) {
-            return "로그인이 필요한 서비스입니다.";
-        }
-
-        corque.gimpalarm.user.domain.User user = userRepository.findByEmail(auth.getName())
-            .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다."));
-
-        return executeTradeForUser(user, request);
-    }
-
-    public String executeTradeForUser(corque.gimpalarm.user.domain.User user, TradingRequest request) {
-        if (!hasCredentials(user, request.getDomesticExchange()) || !hasCredentials(user, request.getForeignExchange())) {
-            return String.format("%s 또는 %s API 키가 등록되지 않았습니다.", 
-                request.getDomesticExchange(), request.getForeignExchange());
-        }
-
+    public String executeTradeForUser(Long userId, TradingRequest request) {
+        User user = userRepository.findById(userId).orElseThrow(() -> new RuntimeException("No User"));
         String botKey = generateBotKey(user.getId(), request);
-
-        if ("START_AUTO".equalsIgnoreCase(request.getAction())) {
-            return startAutoArbitrage(request, botKey, user.getId());
-        } else if ("START".equalsIgnoreCase(request.getAction())) {
-            return startLimitArbitrage(request, botKey, user.getId());
-        } else if ("STOP".equalsIgnoreCase(request.getAction())) {
+        if ("STOP".equalsIgnoreCase(request.getAction())) {
+            updateUserBotStatus(userId, request, BotStatus.STOPPED);
             return stopArbitrage(botKey);
         }
-        return "알 수 없는 명령입니다.";
-    }
 
-    private boolean hasCredentials(corque.gimpalarm.user.domain.User user, String exchange) {
-        String ex = exchange.toUpperCase();
-        if (ex.contains("BINANCE")) ex = "BINANCE";
-        if (ex.contains("BYBIT")) ex = "BYBIT";
-        return userCredentialRepository.findByUserAndExchange(user, ex).isPresent();
-    }
-
-    private String startAutoArbitrage(TradingRequest request, String botKey, Long userId) {
-        if (activeBots.containsKey(botKey)) return botKey + " 봇이 이미 실행 중입니다.";
-        activeBots.put(botKey, new ActiveTrade(request, BotStatus.WAITING, userId, null, 0.0, 0.0, 0.0, null, null));
-        return botKey + " 자동 매매 구독 완료.";
-    }
-
-    private String startLimitArbitrage(TradingRequest request, String botKey, Long userId) {
-        if (activeBots.containsKey(botKey)) return botKey + " 봇이 이미 실행 중입니다.";
-        try {
-            double targetQty = request.getAmountKrw() / request.getLimitPrice();
-            activeBots.put(botKey, new ActiveTrade(request, BotStatus.ENTERING, userId, "ORD-" + System.currentTimeMillis(), targetQty, 0.0, 0.0, null, null));
-            return botKey + " 지정가 진입 시작.";
-        } catch (Exception e) { return "오류: " + e.getMessage(); }
+        activeBots.put(botKey, new ActiveTrade(request, BotStatus.WAITING, user.getId(), null, null, 0.0, 0.0, 0.0, null, null, null));
+        updateUserBotStatus(userId, request, BotStatus.WAITING);
+        return botKey + " trading started";
     }
 
     @EventListener
-    public void onPriceChanged(corque.gimpalarm.coin.dto.PriceChangedEvent event) {
+    public void onPriceChanged(PriceChangedEvent event) {
         if (activeBots.isEmpty()) return;
-        String key = event.getKey();
-        String symbol = key.contains("_") ? key.split("_")[key.split("_").length - 1] : key;
+        String symbol = event.getKey().contains("_") ? event.getKey().split("_")[event.getKey().split("_").length - 1] : event.getKey();
 
-        activeBots.entrySet().stream()
-            .filter(e -> e.getValue().getRequest().getSymbol().equalsIgnoreCase(symbol))
-            .forEach(e -> {
-                ActiveTrade trade = e.getValue();
+        activeBots.forEach((key, trade) -> {
+            if (trade.getRequest().getSymbol().equalsIgnoreCase(symbol)) {
                 if (trade.getStatus() == BotStatus.WAITING || trade.getStatus() == BotStatus.HOLDING) {
-                    checkConditionAndExecute(e.getKey(), trade);
+                    checkConditionAndExecute(key, trade);
                 }
-                if (trade.getStatus() == BotStatus.HOLDING && key.startsWith("BN_F_")) {
-                    checkSlTpCondition(e.getKey(), trade, event.getPrice());
+                if (trade.getStatus() == BotStatus.ENTERING) {
+                    checkEnteringCancellationCondition(key, trade);
                 }
-            });
+                if (trade.getStatus() == BotStatus.HOLDING && event.getKey().startsWith("BN_F_")) {
+                    checkSlTpCondition(key, trade, event.getPrice());
+                }
+            }
+        });
     }
 
     private void checkConditionAndExecute(String botKey, ActiveTrade trade) {
@@ -170,136 +196,341 @@ public class TradingBotService {
         else if (trade.getStatus() == BotStatus.HOLDING) checkExitCondition(botKey, trade, allKimp);
     }
 
-    private void checkSlTpCondition(String botKey, ActiveTrade trade, double currentPrice) {
-        boolean trigger = false;
-        if (trade.getSlPrice() != null && currentPrice >= trade.getSlPrice()) trigger = true;
-        else if (trade.getTpPrice() != null && currentPrice <= trade.getTpPrice()) trigger = true;
+    private void checkEnteringCancellationCondition(String botKey, ActiveTrade trade) {
+        Map<String, List<KimpResponseDto>> allKimp = kimpService.calculateAllPairs();
+        String pairKey = resolvePairKey(trade.getRequest());
+        List<KimpResponseDto> list = allKimp.get(pairKey);
+        if (list == null) {
+            return;
+        }
 
-        if (trigger) triggerMarketExit(botKey, trade);
+        list.stream()
+                .filter(k -> k.getSymbol().equalsIgnoreCase(trade.getRequest().getSymbol()))
+                .findFirst()
+                .ifPresent(k -> {
+                    if (trade.getEntryTime() != null && ChronoUnit.SECONDS.between(trade.getEntryTime(), LocalDateTime.now()) >= 60 && k.getRatio() > trade.getRequest().getEntryKimp()) {
+                        log.info(">>> [ENTERING-CANCEL] {} entry kimp recovered to {}. Start balance now.", botKey, k.getRatio());
+                        balancePositions(botKey, trade);
+                    }
+                });
     }
 
-    private void triggerMarketExit(String botKey, ActiveTrade trade) {
-        try {
-            String ex = trade.getRequest().getDomesticExchange().toUpperCase();
-            if ("BITHUMB".equals(ex)) exchangeApiService.orderBithumb(trade.getUserId(), trade.getRequest().getSymbol(), "ask", trade.getFilledQty(), null, "market");
-            else exchangeApiService.orderUpbit(trade.getUserId(), trade.getRequest().getSymbol(), "ask", trade.getFilledQty(), null, "market");
-            trade.setStatus(BotStatus.EXITING);
-        } catch (Exception e) { log.error("Exit Error: {}", e.getMessage()); }
+    String resolvePairKey(TradingRequest request) {
+        return resolveDomesticCode(request.getDomesticExchange()) + "-" + resolveForeignCode(request.getForeignExchange());
+    }
+
+    private String resolveDomesticCode(String domesticExchange) {
+        if (domesticExchange == null) {
+            throw new IllegalArgumentException("Domestic exchange is required");
+        }
+
+        return switch (domesticExchange.trim().toUpperCase()) {
+            case "UPBIT" -> "ub";
+            case "BITHUMB" -> "bt";
+            default -> throw new IllegalArgumentException("Unsupported domestic exchange: " + domesticExchange);
+        };
+    }
+
+    private String resolveForeignCode(String foreignExchange) {
+        if (foreignExchange == null) {
+            throw new IllegalArgumentException("Foreign exchange is required");
+        }
+
+        return switch (foreignExchange.trim().toUpperCase()) {
+            case "BINANCE", "BINANCE_FUTURES" -> "bn";
+            case "BYBIT", "BYBIT_FUTURES" -> "bb";
+            default -> throw new IllegalArgumentException("Unsupported foreign exchange: " + foreignExchange);
+        };
     }
 
     private void checkEntryCondition(String botKey, ActiveTrade trade, Map<String, List<KimpResponseDto>> allKimp) {
-        String pairKey = trade.getRequest().getDomesticExchange().toLowerCase().substring(0, 2) + "-" + 
-                         trade.getRequest().getForeignExchange().toLowerCase().substring(0, 2);
+        String pairKey = resolvePairKey(trade.getRequest());
         List<KimpResponseDto> list = allKimp.get(pairKey);
         if (list == null) return;
 
         list.stream().filter(k -> k.getSymbol().equalsIgnoreCase(trade.getRequest().getSymbol())).findFirst().ifPresent(k -> {
             if (k.getRatio() <= trade.getRequest().getEntryKimp()) {
+                log.info(">>> [MATCH] {} entry condition met", botKey);
                 try {
-                    String ex = trade.getRequest().getDomesticExchange().toUpperCase();
-                    Map<String, Object> res = "BITHUMB".equals(ex) ? 
-                        exchangeApiService.orderBithumb(trade.getUserId(), trade.getRequest().getSymbol(), "bid", 0, trade.getRequest().getAmountKrw(), "price") :
-                        exchangeApiService.orderUpbit(trade.getUserId(), trade.getRequest().getSymbol(), "bid", 0, trade.getRequest().getAmountKrw(), "price");
-                    trade.setDomesticOrderId((String) res.get("uuid"));
+                    String symbol = trade.getRequest().getSymbol();
+                    String domesticEx = trade.getRequest().getDomesticExchange().toUpperCase();
+
+                    Double dPrice = priceManager.getPrice(("BITHUMB".equals(domesticEx) ? "BT_" : "UB_") + symbol);
+                    Double fPrice = priceManager.getPrice("BN_F_" + symbol);
+
+                    if (dPrice == null || fPrice == null) return;
+
+                    double qty = trade.getRequest().getAmountKrw() / dPrice;
+                    trade.setTotalTargetQty(qty);
+
+                    Map<String, Object> dRes = "BITHUMB".equals(domesticEx)
+                            ? exchangeApiService.orderBithumb(trade.getUserId(), symbol, "bid", qty, dPrice, "limit")
+                            : exchangeApiService.orderUpbit(trade.getUserId(), symbol, "bid", qty, dPrice, "limit");
+                    tradeOrderService.recordOrder(
+                            trade.getUserId(), botKey, domesticEx, "SPOT", ENTRY_DOMESTIC,
+                            symbol, "BUY", null, "LIMIT", qty, dPrice, dRes
+                    );
+
+                    exchangeApiService.setBinanceLeverage(trade.getUserId(), symbol, trade.getRequest().getLeverage());
+                    Map<String, Object> fRes = exchangeApiService.orderBinanceFutures(trade.getUserId(), symbol, "SELL", "SHORT", qty, fPrice, "LIMIT");
+                    tradeOrderService.recordOrder(
+                            trade.getUserId(), botKey, "BINANCE", "FUTURES", ENTRY_FOREIGN,
+                            symbol, "SELL", "SHORT", "LIMIT", qty, fPrice, fRes
+                    );
+
+                    trade.setDomesticOrderId(extractDomesticOrderId(dRes));
+                    trade.setForeignOrderId(String.valueOf(fRes.get("orderId")));
+                    trade.setEntryTime(LocalDateTime.now());
                     trade.setStatus(BotStatus.ENTERING);
-                } catch (Exception e) { log.error("Entry Error: {}", e.getMessage()); activeBots.remove(botKey); }
+                    updateUserBotStatus(trade.getUserId(), trade.getRequest(), BotStatus.ENTERING);
+                } catch (Exception e) {
+                    log.error("Entry Error: {}", e.getMessage());
+                    updateUserBotStatus(trade.getUserId(), trade.getRequest(), BotStatus.ERROR);
+                    activeBots.remove(botKey);
+                }
             }
         });
     }
 
-    @org.springframework.scheduling.annotation.Async
-    protected void handleEnteringProcess(String botKey, ActiveTrade trade) {
+    @Scheduled(fixedRate = 1000)
+    public void processOngoingTrades() {
+        activeBots.forEach((key, trade) -> {
+            if (trade.getStatus() == BotStatus.ENTERING) {
+                if (trade.getEntryTime() != null && ChronoUnit.SECONDS.between(trade.getEntryTime(), LocalDateTime.now()) >= 60) {
+                    balancePositions(key, trade);
+                }
+            } else if (trade.getStatus() == BotStatus.HOLDING) {
+                checkForeignPositionAlive(key, trade);
+            }
+        });
+    }
+
+    private void balancePositions(String botKey, ActiveTrade trade) {
+        log.info(">>> [BALANCE] synchronize positions: {}", botKey);
         try {
-            String ex = trade.getRequest().getDomesticExchange().toUpperCase();
-            Double p = priceManager.getPrice(("BITHUMB".equals(ex) ? "BT_" : "UB_") + trade.getRequest().getSymbol());
-            if (p == null) return;
+            String symbol = trade.getRequest().getSymbol();
+            String domesticEx = trade.getRequest().getDomesticExchange().toUpperCase();
 
-            double qty = trade.getRequest().getAmountKrw() / p;
-            trade.setTotalTargetQty(qty);
-            trade.setFilledQty(qty);
+            Map<String, Object> dInfo = "BITHUMB".equals(domesticEx)
+                    ? exchangeApiService.getOrderBithumb(trade.getUserId(), trade.getDomesticOrderId())
+                    : exchangeApiService.getOrderUpbit(trade.getUserId(), trade.getDomesticOrderId());
+            Map<String, Object> fInfo = exchangeApiService.getOrderBinance(trade.getUserId(), symbol, trade.getForeignOrderId());
 
-            double gap = qty - trade.getHedgedQty();
-            if (gap > 0) {
-                exchangeApiService.setBinanceLeverage(trade.getUserId(), trade.getRequest().getSymbol(), trade.getRequest().getLeverage());
-                Map<String, Object> res = exchangeApiService.orderBinanceFutures(trade.getUserId(), trade.getRequest().getSymbol(), "SELL", "SHORT", gap, null, "MARKET");
-                
-                double entryPrice = (res != null && res.containsKey("avgPrice")) ? Double.parseDouble(res.get("avgPrice").toString()) : 
-                                   priceManager.getPrice("BN_F_" + trade.getRequest().getSymbol());
-                calculateAndSetSlTp(trade, entryPrice);
-                trade.setHedgedQty(trade.getHedgedQty() + gap);
+            tradeOrderService.updateOrderFromExchange(domesticEx, trade.getDomesticOrderId(), dInfo);
+            tradeOrderService.updateOrderFromExchange("BINANCE", trade.getForeignOrderId(), fInfo);
+
+            boolean domesticFilled = isFilledState(domesticEx, dInfo);
+            boolean foreignFilled = isFilledState("BINANCE", fInfo);
+
+            if (!domesticFilled) {
+                if ("BITHUMB".equals(domesticEx)) exchangeApiService.cancelOrderBithumb(trade.getUserId(), trade.getDomesticOrderId());
+                else exchangeApiService.cancelOrderUpbit(trade.getUserId(), trade.getDomesticOrderId());
+                dInfo = "BITHUMB".equals(domesticEx)
+                        ? exchangeApiService.getOrderBithumb(trade.getUserId(), trade.getDomesticOrderId())
+                        : exchangeApiService.getOrderUpbit(trade.getUserId(), trade.getDomesticOrderId());
+                tradeOrderService.updateOrderFromExchange(domesticEx, trade.getDomesticOrderId(), dInfo);
             }
 
-            if (trade.getHedgedQty() >= trade.getTotalTargetQty() * 0.99) trade.setStatus(BotStatus.HOLDING);
-        } catch (Exception e) { log.error("Hedge Error: {}", e.getMessage()); }
+            if (!foreignFilled) {
+                exchangeApiService.cancelOrderBinance(trade.getUserId(), symbol, trade.getForeignOrderId());
+                fInfo = exchangeApiService.getOrderBinance(trade.getUserId(), symbol, trade.getForeignOrderId());
+                tradeOrderService.updateOrderFromExchange("BINANCE", trade.getForeignOrderId(), fInfo);
+            }
+
+            double dFilled = parseExecutedQty(domesticEx, dInfo);
+            double fFilled = parseExecutedQty("BINANCE", fInfo);
+            double minQty = Math.min(dFilled, fFilled);
+            log.info(">>> [RESULT] domestic={}, foreign={}, target={}", dFilled, fFilled, minQty);
+
+            if (minQty <= 0) {
+                updateUserBotStatus(trade.getUserId(), trade.getRequest(), BotStatus.ERROR);
+                activeBots.remove(botKey);
+                return;
+            }
+
+            if (dFilled > minQty) {
+                Map<String, Object> rebalanceDomesticRes = "BITHUMB".equals(domesticEx)
+                        ? exchangeApiService.orderBithumb(trade.getUserId(), symbol, "ask", dFilled - minQty, null, "market")
+                        : exchangeApiService.orderUpbit(trade.getUserId(), symbol, "ask", dFilled - minQty, null, "market");
+                tradeOrderService.recordOrder(
+                        trade.getUserId(), botKey, domesticEx, "SPOT", "REBALANCE_DOMESTIC",
+                        symbol, "SELL", null, "MARKET", dFilled - minQty, null, rebalanceDomesticRes
+                );
+            }
+            if (fFilled > minQty) {
+                Map<String, Object> rebalanceForeignRes = exchangeApiService.orderBinanceFutures(
+                        trade.getUserId(), symbol, "BUY", "SHORT", fFilled - minQty, null, "MARKET");
+                tradeOrderService.recordOrder(
+                        trade.getUserId(), botKey, "BINANCE", "FUTURES", "REBALANCE_FOREIGN",
+                        symbol, "BUY", "SHORT", "MARKET", fFilled - minQty, null, rebalanceForeignRes
+                );
+            }
+
+            trade.setFilledQty(minQty);
+            trade.setHedgedQty(minQty);
+            double avgPrice = parseAveragePrice("BINANCE", fInfo);
+            calculateAndSetSlTp(trade, avgPrice);
+            trade.setStatus(BotStatus.HOLDING);
+            updateUserBotStatus(trade.getUserId(), trade.getRequest(), BotStatus.HOLDING);
+            log.info(">>> [HOLD] holding qty={}", minQty);
+        } catch (Exception e) {
+            log.error("Balance Error: {}", e.getMessage());
+            updateUserBotStatus(trade.getUserId(), trade.getRequest(), BotStatus.ERROR);
+            activeBots.remove(botKey);
+        }
+    }
+
+    private boolean isFilledState(String exchange, Map<String, Object> orderInfo) {
+        if (orderInfo == null) {
+            return false;
+        }
+        String status = "BINANCE".equalsIgnoreCase(exchange)
+                ? String.valueOf(orderInfo.get("status"))
+                : String.valueOf(orderInfo.get("state"));
+        return status != null && ("FILLED".equalsIgnoreCase(status) || "done".equalsIgnoreCase(status));
+    }
+
+    private double parseExecutedQty(String exchange, Map<String, Object> orderInfo) {
+        if (orderInfo == null) {
+            return 0.0;
+        }
+        Object value = "BINANCE".equalsIgnoreCase(exchange) ? orderInfo.get("executedQty") : orderInfo.get("executed_volume");
+        return value == null ? 0.0 : Double.parseDouble(String.valueOf(value));
+    }
+
+    private double parseAveragePrice(String exchange, Map<String, Object> orderInfo) {
+        if (orderInfo == null) {
+            return 0.0;
+        }
+        Object value = "BINANCE".equalsIgnoreCase(exchange) ? orderInfo.get("avgPrice") : orderInfo.get("price");
+        return value == null ? 0.0 : Double.parseDouble(String.valueOf(value));
     }
 
     private void calculateAndSetSlTp(ActiveTrade trade, double entryPrice) {
         int lev = trade.getRequest().getLeverage();
+        String botKey = generateBotKey(trade.getUserId(), trade.getRequest());
         if (trade.getRequest().getStopLossPercent() != null) {
             trade.setSlPrice(entryPrice * (1 + (trade.getRequest().getStopLossPercent() / 100.0 / lev)));
-            exchangeApiService.orderBinanceFuturesConditional(trade.getUserId(), trade.getRequest().getSymbol(), "BUY", "SHORT", trade.getHedgedQty(), trade.getSlPrice(), "STOP_MARKET");
+            Map<String, Object> slRes = exchangeApiService.orderBinanceFuturesConditional(
+                    trade.getUserId(), trade.getRequest().getSymbol(), "BUY", "SHORT", trade.getHedgedQty(), trade.getSlPrice(), "STOP_MARKET");
+            tradeOrderService.recordOrder(
+                    trade.getUserId(), botKey, "BINANCE", "FUTURES", "STOP_LOSS",
+                    trade.getRequest().getSymbol(), "BUY", "SHORT", "STOP_MARKET", trade.getHedgedQty(), trade.getSlPrice(), slRes
+            );
         }
         if (trade.getRequest().getTakeProfitPercent() != null) {
             trade.setTpPrice(entryPrice * (1 - (trade.getRequest().getTakeProfitPercent() / 100.0 / lev)));
-            exchangeApiService.orderBinanceFuturesConditional(trade.getUserId(), trade.getRequest().getSymbol(), "BUY", "SHORT", trade.getHedgedQty(), trade.getTpPrice(), "TAKE_PROFIT_MARKET");
+            Map<String, Object> tpRes = exchangeApiService.orderBinanceFuturesConditional(
+                    trade.getUserId(), trade.getRequest().getSymbol(), "BUY", "SHORT", trade.getHedgedQty(), trade.getTpPrice(), "TAKE_PROFIT_MARKET");
+            tradeOrderService.recordOrder(
+                    trade.getUserId(), botKey, "BINANCE", "FUTURES", "TAKE_PROFIT",
+                    trade.getRequest().getSymbol(), "BUY", "SHORT", "TAKE_PROFIT_MARKET", trade.getHedgedQty(), trade.getTpPrice(), tpRes
+            );
         }
     }
 
     private void checkExitCondition(String botKey, ActiveTrade trade, Map<String, List<KimpResponseDto>> allKimp) {
-        String pairKey = trade.getRequest().getDomesticExchange().toLowerCase().substring(0, 2) + "-" + 
-                         trade.getRequest().getForeignExchange().toLowerCase().substring(0, 2);
+        String pairKey = resolvePairKey(trade.getRequest());
         List<KimpResponseDto> list = allKimp.get(pairKey);
         if (list == null) return;
 
         list.stream().filter(k -> k.getSymbol().equalsIgnoreCase(trade.getRequest().getSymbol())).findFirst().ifPresent(k -> {
             if (k.getRatio() >= trade.getRequest().getExitKimp()) {
-                try {
-                    String ex = trade.getRequest().getDomesticExchange().toUpperCase();
-                    if ("BITHUMB".equals(ex)) exchangeApiService.orderBithumb(trade.getUserId(), trade.getRequest().getSymbol(), "ask", trade.getFilledQty(), null, "market");
-                    else exchangeApiService.orderUpbit(trade.getUserId(), trade.getRequest().getSymbol(), "ask", trade.getFilledQty(), null, "market");
-                    trade.setStatus(BotStatus.EXITING);
-                } catch (Exception e) { log.error("Exit Condition Error: {}", e.getMessage()); }
+                log.info(">>> [EXIT] exit condition met");
+                triggerMarketExit(botKey, trade);
             }
         });
     }
 
-    @org.springframework.scheduling.annotation.Async
-    protected void handleExitingProcess(String botKey, ActiveTrade trade) {
+    private void triggerMarketExit(String botKey, ActiveTrade trade) {
         try {
-            exchangeApiService.orderBinanceFutures(trade.getUserId(), trade.getRequest().getSymbol(), "BUY", "SHORT", trade.getHedgedQty(), null, "MARKET");
+            String symbol = trade.getRequest().getSymbol();
+            String ex = trade.getRequest().getDomesticExchange().toUpperCase();
+            Map<String, Object> domesticExitRes = "BITHUMB".equals(ex)
+                    ? exchangeApiService.orderBithumb(trade.getUserId(), symbol, "ask", trade.getFilledQty(), null, "market")
+                    : exchangeApiService.orderUpbit(trade.getUserId(), symbol, "ask", trade.getFilledQty(), null, "market");
+            tradeOrderService.recordOrder(
+                    trade.getUserId(), botKey, ex, "SPOT", "EXIT_DOMESTIC",
+                    symbol, "SELL", null, "MARKET", trade.getFilledQty(), null, domesticExitRes
+            );
+
+            Map<String, Object> foreignExitRes = exchangeApiService.orderBinanceFutures(
+                    trade.getUserId(), symbol, "BUY", "SHORT", trade.getHedgedQty(), null, "MARKET");
+            tradeOrderService.recordOrder(
+                    trade.getUserId(), botKey, "BINANCE", "FUTURES", "EXIT_FOREIGN",
+                    symbol, "BUY", "SHORT", "MARKET", trade.getHedgedQty(), null, foreignExitRes
+            );
+            updateUserBotStatus(trade.getUserId(), trade.getRequest(), BotStatus.STOPPED);
             activeBots.remove(botKey);
-        } catch (Exception e) { log.error("Exiting Process Error: {}", e.getMessage()); }
+        } catch (Exception e) {
+            log.error("Exit Error: {}", e.getMessage());
+            updateUserBotStatus(trade.getUserId(), trade.getRequest(), BotStatus.ERROR);
+        }
     }
 
-    @Scheduled(fixedRate = 1000)
-    public void processOngoingTrades() {
-        activeBots.forEach((k, t) -> {
-            if (t.getStatus() == BotStatus.ENTERING) handleEnteringProcess(k, t);
-            else if (t.getStatus() == BotStatus.EXITING) handleExitingProcess(k, t);
-            else if (t.getStatus() == BotStatus.HOLDING) checkForeignPositionAlive(k, t);
-        });
+    private void checkSlTpCondition(String botKey, ActiveTrade trade, double currentPrice) {
+        boolean trigger = (trade.getSlPrice() != null && currentPrice >= trade.getSlPrice()) ||
+                (trade.getTpPrice() != null && currentPrice <= trade.getTpPrice());
+        if (trigger) triggerMarketExit(botKey, trade);
     }
 
     private void checkForeignPositionAlive(String botKey, ActiveTrade trade) {
         double pos = exchangeApiService.getBinanceFuturesPosition(trade.getUserId(), trade.getRequest().getSymbol());
-        if (pos == 0.0) triggerDomesticExitOnly(botKey, trade);
-    }
-
-    private void triggerDomesticExitOnly(String botKey, ActiveTrade trade) {
-        try {
+        if (pos == 0.0) {
+            log.warn(">>> [SYSTEM] foreign position closed. close domestic leg");
             String ex = trade.getRequest().getDomesticExchange().toUpperCase();
-            if ("BITHUMB".equals(ex)) exchangeApiService.orderBithumb(trade.getUserId(), trade.getRequest().getSymbol(), "ask", trade.getFilledQty(), null, "market");
-            else exchangeApiService.orderUpbit(trade.getUserId(), trade.getRequest().getSymbol(), "ask", trade.getFilledQty(), null, "market");
+            Map<String, Object> domesticCloseRes = "BITHUMB".equals(ex)
+                    ? exchangeApiService.orderBithumb(trade.getUserId(), trade.getRequest().getSymbol(), "ask", trade.getFilledQty(), null, "market")
+                    : exchangeApiService.orderUpbit(trade.getUserId(), trade.getRequest().getSymbol(), "ask", trade.getFilledQty(), null, "market");
+            tradeOrderService.recordOrder(
+                    trade.getUserId(), botKey, ex, "SPOT", "FAILSAFE_DOMESTIC",
+                    trade.getRequest().getSymbol(), "SELL", null, "MARKET", trade.getFilledQty(), null, domesticCloseRes
+            );
+            updateUserBotStatus(trade.getUserId(), trade.getRequest(), BotStatus.ERROR);
             activeBots.remove(botKey);
-        } catch (Exception e) { log.error("Domestic Exit Error: {}", e.getMessage()); }
+        }
     }
 
     private String stopArbitrage(String botKey) {
-        if (activeBots.containsKey(botKey)) {
-            activeBots.remove(botKey);
-            return botKey + " 중단됨.";
+        activeBots.remove(botKey);
+        return botKey + " stopped";
+    }
+
+    private String extractDomesticOrderId(Map<String, Object> response) {
+        Object uuid = response.get("uuid");
+        if (uuid != null) {
+            return String.valueOf(uuid);
         }
-        return "봇 없음.";
+        Object orderId = response.get("order_id");
+        if (orderId != null) {
+            return String.valueOf(orderId);
+        }
+        Object id = response.get("id");
+        return id != null ? String.valueOf(id) : null;
+    }
+
+    private void updateUserBotStatus(Long userId, TradingRequest request, BotStatus status) {
+        userBotRepository.findByUserIdAndSymbolIgnoreCaseAndDomesticExchangeIgnoreCaseAndForeignExchangeIgnoreCase(
+                        userId,
+                        request.getSymbol(),
+                        request.getDomesticExchange(),
+                        request.getForeignExchange()
+                )
+                .ifPresent(userBot -> {
+                    userBot.setStatus(mapStatus(status));
+                    userBotRepository.save(userBot);
+                });
+    }
+
+    private UserBotStatus mapStatus(BotStatus status) {
+        return switch (status) {
+            case WAITING -> UserBotStatus.WAITING;
+            case ENTERING -> UserBotStatus.ENTERING;
+            case HOLDING -> UserBotStatus.HOLDING;
+            case EXITING -> UserBotStatus.EXITING;
+            case STOPPED -> UserBotStatus.STOPPED;
+            case ERROR -> UserBotStatus.ERROR;
+        };
     }
 
     public Map<String, Boolean> getBotStatus() {
