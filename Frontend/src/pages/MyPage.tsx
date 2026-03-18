@@ -126,32 +126,42 @@ const MyPage: React.FC<MyPageProps> = ({
     } catch (e) {}
   };
 
-  const toggleBotActive = async (symbol: string) => {
+  const toggleBotActive = async (bot: SubscribedBot) => {
     try {
-      await axios.post(`/api/user/subscriptions/${symbol}/toggle`);
+      await axios.post(`/api/user-bots/toggle`, { 
+        symbol: bot.symbol, 
+        domesticExchange: bot.domesticExchange, 
+        foreignExchange: bot.foreignExchange,
+        action: bot.isActive ? 'STOP' : 'START_AUTO'
+      });
       fetchSubscribedBots();
     } catch (e) {
       alert("봇 상태 변경에 실패했습니다.");
     }
   };
 
-  const updateBotSettings = async (
-    symbol: string,
-    targetRatio: number,
-    tradeAmount: number,
-  ) => {
-    setIsUpdatingBot(symbol);
+  const updateBotSettings = async (bot: SubscribedBot) => {
+    const botKey = `${bot.symbol}-${bot.domesticExchange}-${bot.foreignExchange}`;
+    setIsUpdatingBot(botKey);
     try {
-      await axios.put(`/api/user/subscriptions/${symbol}`, {
-        targetRatio,
-        tradeAmount,
-      });
-      alert(`${symbol} 봇 설정이 저장되었습니다.`);
+      await axios.put(`/api/user-bots`, bot);
+      alert(`${bot.symbol} 봇 설정이 저장되었습니다.`);
       fetchSubscribedBots();
     } catch (e) {
       alert("봇 설정 저장에 실패했습니다.");
     } finally {
       setIsUpdatingBot(null);
+    }
+  };
+
+  const deleteBot = async (id: number, symbol: string) => {
+    if (!confirm(`${symbol} 봇 구독을 해제하시겠습니까?`)) return;
+    try {
+      await axios.delete(`/api/user-bots/${id}`);
+      alert('구독이 해제되었습니다.');
+      fetchSubscribedBots();
+    } catch (e) {
+      alert('구독 해제에 실패했습니다.');
     }
   };
 
@@ -822,7 +832,7 @@ const MyPage: React.FC<MyPageProps> = ({
             {subscribedBots.length > 0 ? (
               subscribedBots.map((bot) => (
                 <div
-                  key={bot.symbol}
+                  key={bot.id}
                   style={{
                     padding: "1.5rem",
                     background: "rgba(255,255,255,0.03)",
@@ -865,113 +875,98 @@ const MyPage: React.FC<MyPageProps> = ({
                         {bot.domesticExchange} ↔ {bot.foreignExchange}
                       </span>
                     </div>
-                    <button
-                      onClick={() => toggleBotActive(bot.symbol)}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.5rem",
-                        padding: "0.5rem 1rem",
-                        borderRadius: "0.5rem",
-                        border: "none",
-                        background: bot.isActive
-                          ? "rgba(239, 68, 68, 0.1)"
-                          : "rgba(16, 185, 129, 0.1)",
-                        color: bot.isActive ? "#ef4444" : "#10b981",
-                        fontWeight: 700,
-                        cursor: "pointer",
-                      }}
-                    >
-                      {bot.isActive ? (
-                        <Square size={14} fill="currentColor" />
-                      ) : (
-                        <Play size={14} fill="currentColor" />
-                      )}
-                      {bot.isActive ? "중지" : "시작"}
-                    </button>
+                    <div style={{ display: 'flex', gap: '0.6rem' }}>
+                      <button
+                        onClick={() => toggleBotActive(bot)}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "0.5rem",
+                          padding: "0.5rem 1rem",
+                          borderRadius: "0.5rem",
+                          border: "none",
+                          background: bot.isActive
+                            ? "rgba(239, 68, 68, 0.1)"
+                            : "rgba(16, 185, 129, 0.1)",
+                          color: bot.isActive ? "#ef4444" : "#10b981",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {bot.isActive ? (
+                          <Square size={14} fill="currentColor" />
+                        ) : (
+                          <Play size={14} fill="currentColor" />
+                        )}
+                        {bot.isActive ? "중지" : "시작"}
+                      </button>
+                      <button
+                        onClick={() => bot.id && deleteBot(bot.id, bot.symbol)}
+                        style={{
+                          padding: "0.5rem 1rem",
+                          borderRadius: "0.5rem",
+                          border: "1px solid rgba(239, 68, 68, 0.2)",
+                          background: "transparent",
+                          color: "#ef4444",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          fontSize: '0.85rem'
+                        }}
+                      >
+                        구독 해제
+                      </button>
+                    </div>
                   </div>
 
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "1fr 1fr 100px",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
                       gap: "1rem",
                       alignItems: "flex-end",
                     }}
                   >
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "0.5rem",
-                      }}
-                    >
-                      <label
-                        style={{
-                          fontSize: "0.75rem",
-                          color: "var(--text-secondary)",
-                        }}
-                      >
-                        목표 차익 (%)
-                      </label>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                      <label style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>진입 김프 (%)</label>
                       <input
                         type="number"
-                        defaultValue={bot.targetRatio}
-                        onBlur={(e) =>
-                          (bot.targetRatio = parseFloat(e.target.value))
-                        }
-                        style={{
-                          background: "rgba(0,0,0,0.2)",
-                          border: "1px solid var(--border-color)",
-                          color: "white",
-                          padding: "0.6rem",
-                          borderRadius: "0.4rem",
-                          outline: "none",
-                        }}
+                        defaultValue={bot.entryKimp}
+                        onBlur={(e) => bot.entryKimp = parseFloat(e.target.value)}
+                        style={{ background: "rgba(0,0,0,0.2)", border: "1px solid var(--border-color)", color: "white", padding: "0.5rem", borderRadius: "0.4rem", outline: "none", fontSize: "0.85rem" }}
                       />
                     </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "0.5rem",
-                      }}
-                    >
-                      <label
-                        style={{
-                          fontSize: "0.75rem",
-                          color: "var(--text-secondary)",
-                        }}
-                      >
-                        회당 매매 금액 (USDT)
-                      </label>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                      <label style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>탈출 김프 (%)</label>
                       <input
                         type="number"
-                        defaultValue={bot.tradeAmount}
-                        onBlur={(e) =>
-                          (bot.tradeAmount = parseFloat(e.target.value))
-                        }
-                        style={{
-                          background: "rgba(0,0,0,0.2)",
-                          border: "1px solid var(--border-color)",
-                          color: "white",
-                          padding: "0.6rem",
-                          borderRadius: "0.4rem",
-                          outline: "none",
-                        }}
+                        defaultValue={bot.exitKimp}
+                        onBlur={(e) => bot.exitKimp = parseFloat(e.target.value)}
+                        style={{ background: "rgba(0,0,0,0.2)", border: "1px solid var(--border-color)", color: "white", padding: "0.5rem", borderRadius: "0.4rem", outline: "none", fontSize: "0.85rem" }}
+                      />
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                      <label style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>매매 금액 (KRW)</label>
+                      <input
+                        type="number"
+                        defaultValue={bot.amountKrw}
+                        onBlur={(e) => bot.amountKrw = parseFloat(e.target.value)}
+                        style={{ background: "rgba(0,0,0,0.2)", border: "1px solid var(--border-color)", color: "white", padding: "0.5rem", borderRadius: "0.4rem", outline: "none", fontSize: "0.85rem" }}
+                      />
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                      <label style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>레버리지 (배)</label>
+                      <input
+                        type="number"
+                        defaultValue={bot.leverage}
+                        onBlur={(e) => bot.leverage = parseInt(e.target.value)}
+                        style={{ background: "rgba(0,0,0,0.2)", border: "1px solid var(--border-color)", color: "white", padding: "0.5rem", borderRadius: "0.4rem", outline: "none", fontSize: "0.85rem" }}
                       />
                     </div>
                     <button
-                      onClick={() =>
-                        updateBotSettings(
-                          bot.symbol,
-                          bot.targetRatio,
-                          bot.tradeAmount,
-                        )
-                      }
-                      disabled={isUpdatingBot === bot.symbol}
+                      onClick={() => updateBotSettings(bot)}
+                      disabled={isUpdatingBot === `${bot.symbol}-${bot.domesticExchange}-${bot.foreignExchange}`}
                       style={{
-                        height: "38px",
+                        height: "34px",
                         background: "rgba(56, 189, 248, 0.1)",
                         color: "var(--accent-color)",
                         border: "1px solid rgba(56, 189, 248, 0.2)",
@@ -982,12 +977,13 @@ const MyPage: React.FC<MyPageProps> = ({
                         gap: "0.4rem",
                         cursor: "pointer",
                         fontWeight: 600,
+                        fontSize: "0.85rem"
                       }}
                     >
                       <Save
                         size={14}
                         className={
-                          isUpdatingBot === bot.symbol ? "animate-spin" : ""
+                          isUpdatingBot === `${bot.symbol}-${bot.domesticExchange}-${bot.foreignExchange}` ? "animate-spin" : ""
                         }
                       />
                       저장

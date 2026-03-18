@@ -17,6 +17,8 @@ import org.springframework.web.client.RestTemplate;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.math.BigInteger;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.security.MessageDigest;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -25,6 +27,8 @@ import java.util.*;
 @Slf4j
 @RequiredArgsConstructor
 public class ExchangeApiService {
+
+    private static final String BINANCE_EXCHANGE_INFO_URL = "https://fapi.binance.com/fapi/v1/exchangeInfo";
 
     private final UserCredentialRepository credentialRepository;
     private final EncryptionUtil encryptionUtil;
@@ -283,15 +287,22 @@ public class ExchangeApiService {
         String secretKey = encryptionUtil.decrypt(credential.getApiSecret()).trim();
 
         String binanceSymbol = symbol.toUpperCase() + "USDT";
+        String resolvedPositionSide = resolveBinancePositionSide(userId, positionSide);
+        BinanceSymbolRules symbolRules = getBinanceSymbolRules(binanceSymbol);
+        BigDecimal normalizedQuantity = normalizeQuantity(quantity, symbolRules);
+        BigDecimal normalizedPrice = normalizePrice(price, symbolRules);
         long timestamp = System.currentTimeMillis();
 
         StringBuilder sb = new StringBuilder();
         sb.append("symbol=").append(binanceSymbol);
         sb.append("&side=").append(side.toUpperCase()); // BUY, SELL
-        sb.append("&positionSide=").append(positionSide.toUpperCase()); // BOTH, LONG, SHORT
+        sb.append("&positionSide=").append(resolvedPositionSide); // BOTH, LONG, SHORT
         sb.append("&type=").append(type.toUpperCase()); // LIMIT, MARKET
-        sb.append("&quantity=").append(quantity);
-        if (price != null) sb.append("&price=").append(price);
+        if ("LIMIT".equalsIgnoreCase(type)) {
+            sb.append("&timeInForce=GTC");
+        }
+        sb.append("&quantity=").append(normalizedQuantity.stripTrailingZeros().toPlainString());
+        if (normalizedPrice != null) sb.append("&price=").append(normalizedPrice.stripTrailingZeros().toPlainString());
         sb.append("&timestamp=").append(timestamp);
 
         String queryString = sb.toString();
@@ -400,14 +411,17 @@ public class ExchangeApiService {
         String secretKey = encryptionUtil.decrypt(credential.getApiSecret()).trim();
 
         String binanceSymbol = symbol.toUpperCase() + "USDT";
+        String resolvedPositionSide = resolveBinancePositionSide(userId, positionSide);
+        BinanceSymbolRules symbolRules = getBinanceSymbolRules(binanceSymbol);
+        BigDecimal normalizedStopPrice = normalizePrice(stopPrice, symbolRules);
         long timestamp = System.currentTimeMillis();
 
         StringBuilder sb = new StringBuilder();
         sb.append("symbol=").append(binanceSymbol);
         sb.append("&side=").append(side.toUpperCase());
-        sb.append("&positionSide=").append(positionSide.toUpperCase());
+        sb.append("&positionSide=").append(resolvedPositionSide);
         sb.append("&type=").append(type.toUpperCase()); // STOP_MARKET, TAKE_PROFIT_MARKET
-        sb.append("&stopPrice=").append(stopPrice);
+        sb.append("&stopPrice=").append(normalizedStopPrice.stripTrailingZeros().toPlainString());
         sb.append("&closePosition=true"); // 포지션 전량 종료
         sb.append("&timestamp=").append(timestamp);
 
@@ -437,6 +451,7 @@ public class ExchangeApiService {
         String secretKey = encryptionUtil.decrypt(credential.getApiSecret()).trim();
 
         String binanceSymbol = symbol.toUpperCase() + "USDT";
+        String expectedPositionSide = resolveBinancePositionSide(userId, "SHORT");
         long timestamp = System.currentTimeMillis();
         String queryString = "symbol=" + binanceSymbol + "&timestamp=" + timestamp;
         String signature = hmacSha256(secretKey, queryString);
@@ -452,7 +467,7 @@ public class ExchangeApiService {
                 // 여러 포지션 모드(Hedge/One-way)가 있을 수 있으므로 SHORT 포지션 필터링
                 for (Object obj : response.getBody()) {
                     Map<String, Object> pos = (Map<String, Object>) obj;
-                    if ("SHORT".equalsIgnoreCase(pos.get("positionSide").toString())) {
+                    if (expectedPositionSide.equalsIgnoreCase(pos.get("positionSide").toString())) {
                         return Math.abs(Double.parseDouble(pos.get("positionAmt").toString()));
                     }
                 }
@@ -512,6 +527,48 @@ public class ExchangeApiService {
         }
     }
 
+    public Map<String, Object> getOrderBithumb(Long userId, String orderId) {
+        UserCredential credential = getCredential(userId, "BITHUMB");
+        String accessKey = encryptionUtil.decrypt(credential.getApiKey()).trim();
+        String secretKey = encryptionUtil.decrypt(credential.getApiSecret()).trim();
+
+        String queryString = "uuid=" + orderId;
+        try {
+            String jwtToken = createBithumbJwt(accessKey, secretKey, queryString);
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Authorization", "Bearer " + jwtToken);
+            HttpEntity<String> entity = new HttpEntity<>(headers);
+
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    "https://api.bithumb.com/v1/order?" + queryString, HttpMethod.GET, entity, Map.class);
+            return response.getBody();
+        } catch (Exception e) {
+            log.error("Bithumb GetOrder Error: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    public Map<String, Object> cancelOrderBithumb(Long userId, String orderId) {
+        UserCredential credential = getCredential(userId, "BITHUMB");
+        String accessKey = encryptionUtil.decrypt(credential.getApiKey()).trim();
+        String secretKey = encryptionUtil.decrypt(credential.getApiSecret()).trim();
+
+        String queryString = "uuid=" + orderId;
+        try {
+            String jwtToken = createBithumbJwt(accessKey, secretKey, queryString);
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Authorization", "Bearer " + jwtToken);
+            HttpEntity<String> entity = new HttpEntity<>(headers);
+
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    "https://api.bithumb.com/v1/order?" + queryString, HttpMethod.DELETE, entity, Map.class);
+            return response.getBody();
+        } catch (Exception e) {
+            log.error("Bithumb Cancel Error: {}", e.getMessage());
+            return null;
+        }
+    }
+
     /**
      * 바이낸스 선물 주문 상세 조회
      */
@@ -521,7 +578,7 @@ public class ExchangeApiService {
         String secretKey = encryptionUtil.decrypt(credential.getApiSecret()).trim();
 
         long timestamp = System.currentTimeMillis();
-        String queryString = "symbol=" + symbol.toUpperCase() + "USDT&origClientOrderId=" + orderId + "&timestamp=" + timestamp;
+        String queryString = "symbol=" + symbol.toUpperCase() + "USDT&orderId=" + orderId + "&timestamp=" + timestamp;
         String signature = hmacSha256(secretKey, queryString);
         String url = "https://fapi.binance.com/fapi/v1/order?" + queryString + "&signature=" + signature;
 
@@ -547,7 +604,7 @@ public class ExchangeApiService {
         String secretKey = encryptionUtil.decrypt(credential.getApiSecret()).trim();
 
         long timestamp = System.currentTimeMillis();
-        String queryString = "symbol=" + symbol.toUpperCase() + "USDT&origClientOrderId=" + orderId + "&timestamp=" + timestamp;
+        String queryString = "symbol=" + symbol.toUpperCase() + "USDT&orderId=" + orderId + "&timestamp=" + timestamp;
         String signature = hmacSha256(secretKey, queryString);
         String url = "https://fapi.binance.com/fapi/v1/order?" + queryString + "&signature=" + signature;
 
@@ -578,11 +635,129 @@ public class ExchangeApiService {
                 .sign(algorithm);
     }
 
+    private String createBithumbJwt(String accessKey, String secretKey, String queryString) throws Exception {
+        MessageDigest md = MessageDigest.getInstance("SHA-512");
+        md.update(queryString.getBytes("UTF-8"));
+        String queryHash = String.format("%0128x", new BigInteger(1, md.digest()));
+
+        Algorithm algorithm = Algorithm.HMAC256(secretKey);
+        return JWT.create()
+                .withClaim("access_key", accessKey)
+                .withClaim("nonce", UUID.randomUUID().toString())
+                .withClaim("timestamp", System.currentTimeMillis())
+                .withClaim("query_hash", queryHash)
+                .withClaim("query_hash_alg", "SHA512")
+                .sign(algorithm);
+    }
+
     private UserCredential getCredential(Long userId, String exchange) {
         return credentialRepository.findByUserId(userId).stream()
                 .filter(c -> c.getExchange().equalsIgnoreCase(exchange))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("연동되지 않은 거래소입니다: " + exchange));
+    }
+
+    private String resolveBinancePositionSide(Long userId, String requestedPositionSide) {
+        if (!isBinanceHedgeMode(userId)) {
+            return "BOTH";
+        }
+        return requestedPositionSide.toUpperCase();
+    }
+
+    private boolean isBinanceHedgeMode(Long userId) {
+        UserCredential credential = getCredential(userId, "BINANCE");
+        String accessKey = encryptionUtil.decrypt(credential.getApiKey()).trim();
+        String secretKey = encryptionUtil.decrypt(credential.getApiSecret()).trim();
+
+        long timestamp = System.currentTimeMillis();
+        String queryString = "timestamp=" + timestamp;
+        String signature = hmacSha256(secretKey, queryString);
+        String url = "https://fapi.binance.com/fapi/v1/positionSide/dual?" + queryString + "&signature=" + signature;
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-MBX-APIKEY", accessKey);
+        HttpEntity<String> entity = new HttpEntity<>(headers);
+
+        try {
+            ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, entity, Map.class);
+            if (response.getBody() == null || response.getBody().get("dualSidePosition") == null) {
+                return false;
+            }
+            return Boolean.parseBoolean(String.valueOf(response.getBody().get("dualSidePosition")));
+        } catch (Exception e) {
+            log.warn("Binance position mode fetch failed. Fallback to ONE_WAY: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    private BinanceSymbolRules getBinanceSymbolRules(String binanceSymbol) {
+        ResponseEntity<Map> response = restTemplate.getForEntity(BINANCE_EXCHANGE_INFO_URL, Map.class);
+        if (response.getBody() == null || response.getBody().get("symbols") == null) {
+            throw new RuntimeException("Binance exchangeInfo response is empty");
+        }
+
+        List<Map<String, Object>> symbols = (List<Map<String, Object>>) response.getBody().get("symbols");
+        Map<String, Object> symbolInfo = symbols.stream()
+                .filter(item -> binanceSymbol.equalsIgnoreCase(String.valueOf(item.get("symbol"))))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Unsupported Binance futures symbol: " + binanceSymbol));
+
+        String stepSize = null;
+        String tickSize = null;
+        List<Map<String, Object>> filters = (List<Map<String, Object>>) symbolInfo.get("filters");
+        if (filters != null) {
+            for (Map<String, Object> filter : filters) {
+                String filterType = String.valueOf(filter.get("filterType"));
+                if ("LOT_SIZE".equalsIgnoreCase(filterType)) {
+                    stepSize = String.valueOf(filter.get("stepSize"));
+                } else if ("PRICE_FILTER".equalsIgnoreCase(filterType)) {
+                    tickSize = String.valueOf(filter.get("tickSize"));
+                }
+            }
+        }
+
+        return new BinanceSymbolRules(
+                stepSize != null ? new BigDecimal(stepSize) : null,
+                tickSize != null ? new BigDecimal(tickSize) : null
+        );
+    }
+
+    BigDecimal normalizeQuantity(double quantity, BinanceSymbolRules symbolRules) {
+        BigDecimal rawQuantity = BigDecimal.valueOf(quantity);
+        if (symbolRules.stepSize() == null || symbolRules.stepSize().compareTo(BigDecimal.ZERO) <= 0) {
+            return rawQuantity;
+        }
+
+        BigDecimal steps = rawQuantity.divide(symbolRules.stepSize(), 0, RoundingMode.DOWN);
+        BigDecimal normalized = steps.multiply(symbolRules.stepSize());
+        if (normalized.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Normalized Binance quantity is zero: " + quantity);
+        }
+        return normalized;
+    }
+
+    BigDecimal normalizePrice(Double price, BinanceSymbolRules symbolRules) {
+        if (price == null) {
+            return null;
+        }
+        return normalizePrice(price.doubleValue(), symbolRules);
+    }
+
+    BigDecimal normalizePrice(double price, BinanceSymbolRules symbolRules) {
+        BigDecimal rawPrice = BigDecimal.valueOf(price);
+        if (symbolRules.tickSize() == null || symbolRules.tickSize().compareTo(BigDecimal.ZERO) <= 0) {
+            return rawPrice;
+        }
+
+        BigDecimal ticks = rawPrice.divide(symbolRules.tickSize(), 0, RoundingMode.DOWN);
+        BigDecimal normalized = ticks.multiply(symbolRules.tickSize());
+        if (normalized.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Normalized Binance price is zero: " + price);
+        }
+        return normalized;
+    }
+
+    record BinanceSymbolRules(BigDecimal stepSize, BigDecimal tickSize) {
     }
 
     private String hmacSha256(String secret, String message) {

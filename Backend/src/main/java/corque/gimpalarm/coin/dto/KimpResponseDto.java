@@ -5,6 +5,8 @@ import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.Instant;
+
 @Getter
 @Setter
 @Data
@@ -16,5 +18,6 @@ public class KimpResponseDto {
     private double ratio;
     private Double fundingRate;
     private Double tradeVolume;
+    private Instant time;
 }
 
