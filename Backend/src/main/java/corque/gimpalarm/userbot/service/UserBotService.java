@@ -1,12 +1,13 @@
 package corque.gimpalarm.userbot.service;
 
+import corque.gimpalarm.coin.dto.TradingRequest;
+import corque.gimpalarm.coin.service.TradingBotService;
 import corque.gimpalarm.user.domain.User;
 import corque.gimpalarm.user.repository.UserRepository;
 import corque.gimpalarm.userbot.domain.UserBot;
+import corque.gimpalarm.userbot.domain.UserBotStatus;
 import corque.gimpalarm.userbot.dto.UserBotResponseDto;
 import corque.gimpalarm.userbot.repository.UserBotRepository;
-import corque.gimpalarm.coin.dto.TradingRequest;
-import corque.gimpalarm.coin.service.TradingBotService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -33,7 +34,7 @@ public class UserBotService {
     public List<UserBotResponseDto> getMyBots(String email) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-        
+
         return userBotRepository.findAllByUser(user).stream()
                 .map(this::convertToDto)
                 .collect(Collectors.toList());
@@ -57,13 +58,11 @@ public class UserBotService {
                 .stopLossPercent(request.getStopLossPercent())
                 .takeProfitPercent(request.getTakeProfitPercent())
                 .isActive(true)
+                .status(UserBotStatus.WAITING)
                 .build();
 
         UserBot savedBot = userBotRepository.save(userBot);
-        
-        // 실시간 매매 서비스에 봇 실행 요청
         tradingBotService.executeTradeForUser(userId, request);
-
         return convertToDto(savedBot);
     }
 
@@ -71,22 +70,19 @@ public class UserBotService {
     public UserBotResponseDto updateBot(Long userId, Long botId, TradingRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-        
+
         UserBot userBot = userBotRepository.findByIdAndUser(botId, user)
                 .orElseThrow(() -> new RuntimeException("Bot not found or unauthorized"));
 
-        // 기존 봇 중단 (메모리에서 제거)
         stopBotInMemory(user, userBot);
 
-        // 값 업데이트
         userBot.setAmountKrw(request.getAmountKrw());
         userBot.setLeverage(request.getLeverage());
         userBot.setEntryKimp(request.getEntryKimp());
         userBot.setExitKimp(request.getExitKimp());
-        
-        // 다시 실행
-        tradingBotService.executeTradeForUser(userId, request);
+        userBot.setStatus(UserBotStatus.WAITING);
 
+        tradingBotService.executeTradeForUser(userId, request);
         return convertToDto(userBot);
     }
 
@@ -94,13 +90,11 @@ public class UserBotService {
     public void deleteBot(String email, Long botId) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-        
+
         UserBot userBot = userBotRepository.findByIdAndUser(botId, user)
                 .orElseThrow(() -> new RuntimeException("Bot not found or unauthorized"));
 
-        // 메모리에서 봇 중단
         stopBotInMemory(user, userBot);
-        
         userBotRepository.delete(userBot);
     }
 
@@ -110,7 +104,8 @@ public class UserBotService {
         stopRequest.setDomesticExchange(userBot.getDomesticExchange());
         stopRequest.setForeignExchange(userBot.getForeignExchange());
         stopRequest.setAction("STOP");
-        
+
+        userBot.setStatus(UserBotStatus.STOPPED);
         tradingBotService.executeTradeForUser(user.getId(), stopRequest);
     }
 
@@ -128,6 +123,7 @@ public class UserBotService {
                 .stopLossPercent(userBot.getStopLossPercent())
                 .takeProfitPercent(userBot.getTakeProfitPercent())
                 .isActive(userBot.isActive())
+                .status(userBot.getStatus())
                 .build();
     }
 }

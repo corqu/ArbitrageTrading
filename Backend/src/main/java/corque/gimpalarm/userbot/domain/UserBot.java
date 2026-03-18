@@ -47,4 +47,9 @@ public class UserBot extends BaseEntity {
     @Builder.Default
     @Column(nullable = false)
     private boolean isActive = true;
+
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private UserBotStatus status = UserBotStatus.WAITING;
 }

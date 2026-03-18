@@ -1,5 +1,6 @@
 package corque.gimpalarm.userbot.dto;
 
+import corque.gimpalarm.userbot.domain.UserBotStatus;
 import lombok.Builder;
 import lombok.Data;
 
@@ -18,4 +19,5 @@ public class UserBotResponseDto {
     private Double stopLossPercent;
     private Double takeProfitPercent;
     private boolean isActive;
+    private UserBotStatus status;
 }

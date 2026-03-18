@@ -20,10 +20,15 @@ export interface TradingRequest {
 }
 
 export interface SubscribedBot {
+  id?: number;
   symbol: string;
   isActive: boolean;
-  targetRatio: number;
-  tradeAmount: number;
+  entryKimp: number;
+  exitKimp: number;
+  amountKrw: number;
+  leverage: number;
+  stopLossPercent: number;
+  takeProfitPercent: number;
   domesticExchange: string;
   foreignExchange: string;
 }
