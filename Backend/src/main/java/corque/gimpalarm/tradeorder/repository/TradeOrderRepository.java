@@ -10,4 +10,5 @@ public interface TradeOrderRepository extends JpaRepository<TradeOrder, Long> {
     Optional<TradeOrder> findTopByExchangeAndExchangeOrderIdOrderByIdDesc(String exchange, String exchangeOrderId);
     Optional<TradeOrder> findTopByBotKeyAndOrderRoleOrderByIdDesc(String botKey, String orderRole);
     List<TradeOrder> findAllByBotKeyAndOrderRoleOrderByIdDesc(String botKey, String orderRole);
+    List<TradeOrder> findTop200ByUserIdOrderByIdDesc(Long userId);
 }

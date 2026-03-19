@@ -164,6 +164,7 @@ public class ExchangeApiService {
                     apiUrl + endpoint, HttpMethod.GET, entity, List.class);
 
             double krw = 0;
+            double coinAssetKrw = 0;
             List<Map<String, String>> coins = new ArrayList<>();
 
             if (response.getBody() != null) {
@@ -179,10 +180,21 @@ public class ExchangeApiService {
                     if ("KRW".equals(currency)) {
                         krw = balance;
                     } else if (balance > 0) {
+                        Double currentPrice = priceManager.getPrice("BT_" + currency.toUpperCase());
+                        if (currentPrice != null && currentPrice > 0) {
+                            coinAssetKrw += balance * currentPrice;
+                        }
                         coins.add(Map.of("currency", currency, "balance", String.valueOf(balance)));
                     }
                 }
-                return Map.of("mainBalance", krw, "mainUnit", "KRW", "balances", coins);
+                return Map.of(
+                        "mainBalance", krw,
+                        "mainUnit", "KRW",
+                        "balances", coins,
+                        "coinAssetKrw", coinAssetKrw,
+                        "totalAssetKrw", krw + coinAssetKrw,
+                        "totalAssetUnit", "KRW"
+                );
             }
         } catch (Exception e) {
             log.error("Bithumb (JWT) API 호출 중 예외 발생: {}", e.getMessage());
