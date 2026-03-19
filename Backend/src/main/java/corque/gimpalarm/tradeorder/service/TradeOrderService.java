@@ -2,6 +2,7 @@ package corque.gimpalarm.tradeorder.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import corque.gimpalarm.common.exception.NotFoundException;
 import corque.gimpalarm.tradeorder.domain.TradeOrder;
 import corque.gimpalarm.tradeorder.repository.TradeOrderRepository;
 import corque.gimpalarm.user.domain.User;
@@ -38,7 +39,7 @@ public class TradeOrderService {
         }
 
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
+                .orElseThrow(() -> new NotFoundException("User not found: " + userId));
 
         TradeOrder order = TradeOrder.builder()
                 .user(user)

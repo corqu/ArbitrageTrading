@@ -24,18 +24,22 @@ public class BotTradeStateService {
     public BotTradeState initialize(UserBot userBot, String botKey, BotStatus status) {
         return botTradeStateRepository.findByUserBotId(userBot.getId())
                 .map(existing -> {
+                    userBot.setBotTradeState(existing);
                     existing.setBotKey(botKey);
                     return updateStatus(existing, status, null);
                 })
-                .orElseGet(() -> botTradeStateRepository.save(BotTradeState.builder()
-                        .userBot(userBot)
-                        .user(userBot.getUser())
-                        .botKey(botKey)
-                        .status(status)
-                        .filledQty(0.0)
-                        .hedgedQty(0.0)
-                        .totalTargetQty(0.0)
-                        .build()));
+                .orElseGet(() -> {
+                    BotTradeState state = BotTradeState.builder()
+                            .user(userBot.getUser())
+                            .botKey(botKey)
+                            .status(status)
+                            .filledQty(0.0)
+                            .hedgedQty(0.0)
+                            .totalTargetQty(0.0)
+                            .build();
+                    state.setUserBot(userBot);
+                    return botTradeStateRepository.save(state);
+                });
     }
 
     @Transactional(readOnly = true)

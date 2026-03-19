@@ -38,11 +38,14 @@ body {
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-  position: relative;
+  position: sticky;
+  top: 0;
   left: 0; /* 왼쪽 끝 고정 */
-  min-height: 100vh;
+  height: 100vh;
   flex-shrink: 0;
+  align-self: flex-start;
   z-index: 100;
+  overflow: hidden;
   box-sizing: border-box; /* 패딩 포함 크기 계산 */
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -56,6 +59,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
   padding: 0 1.25rem;
   font-size: 1.15rem;
   font-weight: 800;
@@ -72,6 +76,8 @@ body {
 .sidebar-menu {
   padding: 1rem 0.6rem;
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .sidebar.collapsed .sidebar-menu {
@@ -336,7 +342,10 @@ td {
 
 /* 사이드바 하단 영역 스타일 추가 */
 .sidebar-footer {
+  margin-top: auto;
   padding-bottom: 1.5rem;
+  flex-shrink: 0;
+  background-color: var(--sidebar-bg);
 }
 
 .status-group {

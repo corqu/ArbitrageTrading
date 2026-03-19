@@ -8,7 +8,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 import org.springframework.web.socket.BinaryMessage;
 import org.springframework.web.socket.TextMessage;
@@ -31,45 +30,50 @@ public class UpbitWebSocketService {
     private final PriceManager priceManager;
     private final CoinBatchService coinBatchService;
     private final BinanceFuturesWebSocketService binanceFuturesWebSocketService;
+    private final UsdKrwCacheService usdKrwCacheService;
     private final SupportedCoinRepository coinRepository;
 
     @EventListener(ApplicationReadyEvent.class)
     public void init() {
-        log.info("실시간 소켓 연결 및 초기 데이터 수집을 시작합니다.");
-        
-        // 0. 업비트 REST API로 초기 환율(KRW-USDT) 가져오기
-        fetchInitialUsdKrw();
+        log.info("Starting Upbit websocket initialization");
 
-        // 1. 업비트 소켓 연결
+        restoreCachedUsdKrw();
+        fetchInitialUsdKrw();
         connect();
-        
-        // 2. 바이낸스 선물 소켓 연결
         binanceFuturesWebSocketService.connect();
+    }
+
+    private void restoreCachedUsdKrw() {
+        usdKrwCacheService.getLatest().ifPresent(price -> {
+            priceManager.updateUsdKrw(price);
+            log.info("Restored KRW-USDT from InfluxDB: {}", price);
+        });
     }
 
     private void fetchInitialUsdKrw() {
         try {
             org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
             String url = "https://api.upbit.com/v1/ticker?markets=KRW-USDT";
-            
-            // Raw 타입으로 받아서 안전하게 처리
+
             java.util.List response = restTemplate.getForObject(url, java.util.List.class);
-            
+
             if (response != null && !response.isEmpty()) {
-                // 첫 번째 요소를 Map으로 형변환
                 java.util.Map<String, Object> ticker = (java.util.Map<String, Object>) response.get(0);
                 Object tradePriceObj = ticker.get("trade_price");
-                
+
                 if (tradePriceObj != null) {
                     double price = Double.parseDouble(tradePriceObj.toString());
                     priceManager.updateUsdKrw(price);
-                    log.info("초기 환율 로드 성공: {}원 (Upbit REST API)", price);
+                    usdKrwCacheService.save(price, "upbit_rest");
+                    log.info("Loaded initial KRW-USDT from Upbit REST: {}", price);
                 }
             }
         } catch (Exception e) {
-            log.error("초기 환율 로드 실패: {}", e.getMessage());
-            // 실패 시 최소한의 동작을 위해 기본값 설정
-            priceManager.updateUsdKrw(1450.0);
+            log.error("Failed to load initial KRW-USDT from Upbit REST: {}", e.getMessage());
+            if (!priceManager.hasCurrentUsdKrw()) {
+                priceManager.updateUsdKrw(1450.0);
+                log.warn("No cached KRW-USDT value found. Falling back to 1450.0");
+            }
         }
     }
 
@@ -79,13 +83,12 @@ public class UpbitWebSocketService {
         client.execute(new AbstractWebSocketHandler() {
             @Override
             public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-                // 업비트에 상장된 코인만 필터링
                 List<String> codes = coinRepository.findAll().stream()
                         .filter(c -> c.isUpbit())
                         .map(c -> "KRW-" + c.getSymbol().toUpperCase())
                         .collect(Collectors.toList());
-                
-                codes.add("KRW-USDT"); // 환율용
+
+                codes.add("KRW-USDT");
 
                 String coinJson = codes.stream()
                         .map(code -> "\"" + code + "\"")
@@ -93,7 +96,7 @@ public class UpbitWebSocketService {
 
                 String subscribeMessage = String.format("[{\"ticket\":\"my_kimp_project\"},{\"type\":\"ticker\",\"codes\":[%s]}]", coinJson);
                 session.sendMessage(new TextMessage(subscribeMessage));
-                log.info("업비트 소켓 구독: {} 종", codes.size());
+                log.info("Subscribed to Upbit websocket tickers: {}", codes.size());
             }
 
             @Override
@@ -105,17 +108,18 @@ public class UpbitWebSocketService {
                     double price = ticker.getTradePrice();
                     if ("KRW-USDT".equals(ticker.getCode())) {
                         priceManager.updateUsdKrw(price);
+                        usdKrwCacheService.save(price, "upbit_ws");
                     } else {
                         String symbol = ticker.getCode().split("-")[1].toUpperCase();
                         priceManager.updatePrice("UB_" + symbol, price);
-                        priceManager.updateTradeVolume("UB_" + symbol, ticker.getAccTradePrice24h()); // 거래대금 업데이트 추가
+                        priceManager.updateTradeVolume("UB_" + symbol, ticker.getAccTradePrice24h());
                     }
                 }
             }
 
             @Override
             public void handleTransportError(WebSocketSession session, Throwable exception) throws Exception {
-                log.error("업비트 소켓 에러: {}", exception.getMessage());
+                log.error("Upbit websocket transport error: {}", exception.getMessage());
             }
         }, UPBIT_WSS_URL);
     }

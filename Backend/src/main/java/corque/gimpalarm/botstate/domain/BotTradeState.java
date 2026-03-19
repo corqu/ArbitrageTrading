@@ -63,4 +63,11 @@ public class BotTradeState extends BaseEntity {
 
     @Column(length = 500)
     private String errorReason;
+
+    public void setUserBot(UserBot userBot) {
+        this.userBot = userBot;
+        if (userBot != null && userBot.getBotTradeState() != this) {
+            userBot.setBotTradeState(this);
+        }
+    }
 }

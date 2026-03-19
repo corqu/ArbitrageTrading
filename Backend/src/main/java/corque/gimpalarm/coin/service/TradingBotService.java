@@ -2,6 +2,8 @@ package corque.gimpalarm.coin.service;
 
 import corque.gimpalarm.coin.domain.BotStatus;
 import corque.gimpalarm.botstate.service.BotTradeStateService;
+import corque.gimpalarm.common.exception.BadRequestException;
+import corque.gimpalarm.common.exception.NotFoundException;
 import corque.gimpalarm.coin.dto.KimpResponseDto;
 import corque.gimpalarm.coin.dto.PriceChangedEvent;
 import corque.gimpalarm.coin.dto.PriceManager;
@@ -24,7 +26,6 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -106,7 +107,7 @@ public class TradingBotService {
     }
 
     public String executeTradeForUser(Long userId, TradingRequest request) {
-        User user = userRepository.findById(userId).orElseThrow(() -> new RuntimeException("No User"));
+        User user = userRepository.findById(userId).orElseThrow(() -> new NotFoundException("User not found"));
         String botKey = generateBotKey(user.getId(), request);
         if ("STOP".equalsIgnoreCase(request.getAction())) {
             botStatusSyncService.sync(userId, request, botKey, BotStatus.STOPPED);
@@ -169,25 +170,25 @@ public class TradingBotService {
 
     private String resolveDomesticCode(String domesticExchange) {
         if (domesticExchange == null) {
-            throw new IllegalArgumentException("Domestic exchange is required");
+            throw new BadRequestException("Domestic exchange is required");
         }
 
         return switch (domesticExchange.trim().toUpperCase()) {
             case "UPBIT" -> "ub";
             case "BITHUMB" -> "bt";
-            default -> throw new IllegalArgumentException("Unsupported domestic exchange: " + domesticExchange);
+            default -> throw new BadRequestException("Unsupported domestic exchange: " + domesticExchange);
         };
     }
 
     private String resolveForeignCode(String foreignExchange) {
         if (foreignExchange == null) {
-            throw new IllegalArgumentException("Foreign exchange is required");
+            throw new BadRequestException("Foreign exchange is required");
         }
 
         return switch (foreignExchange.trim().toUpperCase()) {
             case "BINANCE", "BINANCE_FUTURES" -> "bn";
             case "BYBIT", "BYBIT_FUTURES" -> "bb";
-            default -> throw new IllegalArgumentException("Unsupported foreign exchange: " + foreignExchange);
+            default -> throw new BadRequestException("Unsupported foreign exchange: " + foreignExchange);
         };
     }
 
@@ -352,6 +353,7 @@ public class TradingBotService {
                 )
         );
     }
+
     private boolean isFilledState(String exchange, Map<String, Object> orderInfo) {
         if (orderInfo == null) {
             return false;
@@ -487,5 +489,3 @@ public class TradingBotService {
         return status;
     }
 }
-
-

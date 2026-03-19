@@ -1,5 +1,6 @@
 package corque.gimpalarm.userbot.domain;
 
+import corque.gimpalarm.botstate.domain.BotTradeState;
 import corque.gimpalarm.common.domain.BaseEntity;
 import corque.gimpalarm.user.domain.User;
 import jakarta.persistence.*;
@@ -20,6 +21,9 @@ public class UserBot extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
+
+    @OneToOne(mappedBy = "userBot", fetch = FetchType.LAZY, cascade = CascadeType.REMOVE, orphanRemoval = true)
+    private BotTradeState botTradeState;
 
     @Column(nullable = false)
     private String symbol;
@@ -52,4 +56,11 @@ public class UserBot extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private UserBotStatus status = UserBotStatus.WAITING;
+
+    public void setBotTradeState(BotTradeState botTradeState) {
+        this.botTradeState = botTradeState;
+        if (botTradeState != null && botTradeState.getUserBot() != this) {
+            botTradeState.setUserBot(this);
+        }
+    }
 }

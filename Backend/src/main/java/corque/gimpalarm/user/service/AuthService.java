@@ -1,5 +1,9 @@
 package corque.gimpalarm.user.service;
 
+import corque.gimpalarm.common.exception.ConflictException;
+import corque.gimpalarm.common.exception.ErrorCode;
+import corque.gimpalarm.common.exception.NotFoundException;
+import corque.gimpalarm.common.exception.UnauthorizedException;
 import corque.gimpalarm.common.util.JwtTokenProvider;
 import corque.gimpalarm.user.domain.RefreshToken;
 import corque.gimpalarm.user.domain.User;
@@ -28,7 +32,7 @@ public class AuthService {
     @Transactional
     public User signup(String email, String password, String nickname) {
         if (userRepository.findByEmail(email).isPresent()) {
-            throw new RuntimeException("Email already exists");
+            throw new ConflictException("Email already exists");
         }
 
         User user = User.builder()
@@ -43,10 +47,10 @@ public class AuthService {
     @Transactional
     public TokenResponse login(String email, String password) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new NotFoundException("User not found"));
 
         if (!passwordEncoder.matches(password, user.getPassword())) {
-            throw new RuntimeException("Invalid password");
+            throw new UnauthorizedException("Invalid password");
         }
 
         String accessToken = jwtTokenProvider.createAccessToken(user.getEmail());
@@ -65,15 +69,15 @@ public class AuthService {
     @Transactional
     public String refreshAccessToken(String refreshToken) {
         if (!jwtTokenProvider.validateToken(refreshToken)) {
-            throw new RuntimeException("Invalid refresh token");
+            throw new UnauthorizedException(ErrorCode.TOKEN_INVALID, "Invalid refresh token");
         }
 
         RefreshToken storedToken = refreshTokenRepository.findByToken(refreshToken)
-                .orElseThrow(() -> new RuntimeException("Refresh token not found in DB"));
+                .orElseThrow(() -> new NotFoundException("Refresh token not found in DB"));
 
         if (storedToken.isExpired()) {
             refreshTokenRepository.delete(storedToken);
-            throw new RuntimeException("Refresh token expired");
+            throw new UnauthorizedException(ErrorCode.TOKEN_INVALID, "Refresh token expired");
         }
 
         return jwtTokenProvider.createAccessToken(storedToken.getEmail());
@@ -83,7 +87,7 @@ public class AuthService {
         LocalDateTime expiryDate = LocalDateTime.now().plusNanos(refreshTokenValidityInMilliseconds * 1_000_000);
         RefreshToken refreshToken = refreshTokenRepository.findByEmail(email)
                 .orElse(RefreshToken.builder().email(email).build());
-        
+
         refreshToken.updateToken(token, expiryDate);
         refreshTokenRepository.save(refreshToken);
     }
@@ -95,7 +99,7 @@ public class AuthService {
     public String getNickname(String email) {
         return userRepository.findByEmail(email)
                 .map(User::getNickname)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new NotFoundException("User not found"));
     }
 
     @lombok.Value
