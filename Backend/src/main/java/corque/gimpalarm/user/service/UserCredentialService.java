@@ -1,5 +1,6 @@
 package corque.gimpalarm.user.service;
 
+import corque.gimpalarm.common.exception.NotFoundException;
 import corque.gimpalarm.common.util.EncryptionUtil;
 import corque.gimpalarm.user.domain.User;
 import corque.gimpalarm.user.domain.UserCredential;
@@ -31,7 +32,7 @@ public class UserCredentialService {
     @Transactional
     public Long registerCredential(Long userId, UserCredentialRequestDto requestDto) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
+                .orElseThrow(() -> new NotFoundException("User not found: " + userId));
 
         String encryptedApiKey = encryptionUtil.encrypt(requestDto.getAccessKey());
         String encryptedApiSecret = encryptionUtil.encrypt(requestDto.getSecretKey());
@@ -41,7 +42,7 @@ public class UserCredentialService {
                         .user(user)
                         .exchange(requestDto.getExchange())
                         .build());
-        
+
         credential.setApiKey(encryptedApiKey);
         credential.setApiSecret(encryptedApiSecret);
 

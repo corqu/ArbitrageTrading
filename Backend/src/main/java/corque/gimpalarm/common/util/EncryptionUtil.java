@@ -1,5 +1,6 @@
 package corque.gimpalarm.common.util;
 
+import corque.gimpalarm.common.exception.EncryptionException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -13,7 +14,7 @@ import java.util.Base64;
 public class EncryptionUtil {
 
     private static final String ALGORITHM = "AES/CBC/PKCS5Padding";
-    
+
     @Value("${encryption.secret-key}")
     private String secretKey;
 
@@ -30,7 +31,7 @@ public class EncryptionUtil {
             byte[] encrypted = cipher.doFinal(text.getBytes(StandardCharsets.UTF_8));
             return Base64.getEncoder().encodeToString(encrypted);
         } catch (Exception e) {
-            throw new RuntimeException("Encryption failed", e);
+            throw new EncryptionException("Encryption failed", e);
         }
     }
 
@@ -45,7 +46,7 @@ public class EncryptionUtil {
             byte[] decrypted = cipher.doFinal(decodedBytes);
             return new String(decrypted, StandardCharsets.UTF_8);
         } catch (Exception e) {
-            throw new RuntimeException("Decryption failed", e);
+            throw new EncryptionException("Decryption failed", e);
         }
     }
 }

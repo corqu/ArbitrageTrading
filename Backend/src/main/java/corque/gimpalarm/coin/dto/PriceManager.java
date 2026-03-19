@@ -14,7 +14,7 @@ public class PriceManager {
     private final Map<String, Double> fundingRates = new ConcurrentHashMap<>();
     private final Map<String, Double> tradeVolumes = new ConcurrentHashMap<>();
     private final Map<String, Long> nextFundingTimes = new ConcurrentHashMap<>();
-    private Double currentUsdKrw;
+    private volatile Double currentUsdKrw;
 
     public void updatePrice(String key, double price){
         prices.put(key, price);
@@ -35,6 +35,10 @@ public class PriceManager {
     }
 
     public void updateUsdKrw(double price){
+        if (price <= 0) {
+            return;
+        }
+
         currentUsdKrw = price;
     }
 
@@ -52,6 +56,10 @@ public class PriceManager {
 
     public Double getCurrentUsdKrw() {
         return currentUsdKrw;
+    }
+
+    public boolean hasCurrentUsdKrw() {
+        return currentUsdKrw != null && currentUsdKrw > 0;
     }
 
     public Map<String, Double> getAllPrices() {

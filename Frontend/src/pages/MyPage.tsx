@@ -144,7 +144,7 @@ const MyPage: React.FC<MyPageProps> = ({
     const botKey = `${bot.symbol}-${bot.domesticExchange}-${bot.foreignExchange}`;
     setIsUpdatingBot(botKey);
     try {
-      await axios.put(`/api/user-bots`, bot);
+      await axios.put(`/api/user-bots/${bot.id}`, bot);
       alert(`${bot.symbol} 봇 설정이 저장되었습니다.`);
       fetchSubscribedBots();
     } catch (e) {

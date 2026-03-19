@@ -154,16 +154,14 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const formatVolume = (volume: number | null) => {
     if (!volume) return "-";
-    const EOK = 100000000,
-      JO = 1000000000000;
-    if (volume >= JO) {
-      const joPart = Math.floor(volume / JO),
-        eokPart = Math.floor((volume % JO) / EOK);
-      return eokPart > 0
-        ? `${joPart}조 ${eokPart.toLocaleString()}억`
-        : `${joPart}조`;
+    const MILLION = 1000000,
+      BILLION = 1000000000,
+      TRILLION = 1000000000000;
+
+    if (volume >= TRILLION) {
+      return `${Math.floor(volume / BILLION).toLocaleString()}십억`;
     }
-    return `${Math.floor(volume / EOK).toLocaleString()}억`;
+    return `${Math.floor(volume / MILLION).toLocaleString()}백만`;
   };
 
   return (

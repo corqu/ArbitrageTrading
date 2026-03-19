@@ -3,6 +3,8 @@ package corque.gimpalarm.user.service;
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.algorithms.Algorithm;
 import corque.gimpalarm.coin.dto.PriceManager;
+import corque.gimpalarm.common.exception.BadRequestException;
+import corque.gimpalarm.common.exception.ExternalApiException;
 import corque.gimpalarm.common.util.EncryptionUtil;
 import corque.gimpalarm.user.domain.UserCredential;
 import corque.gimpalarm.user.repository.UserCredentialRepository;
@@ -36,8 +38,8 @@ public class ExchangeApiService {
     private final RestTemplate restTemplate = new RestTemplate();
 
     /**
-     * 지정된 거래소에 대해서만 사용자의 자산을 가져옵니다.
-     * 연동되지 않은 거래소인 경우 예외를 발생시킵니다.
+     * 吏?뺣맂 嫄곕옒?뚯뿉 ??댁꽌留??ъ슜?먯쓽 ?먯궛??媛?몄샃?덈떎.
+     * ?곕룞?섏? ?딆? 嫄곕옒?뚯씤 寃쎌슦 ?덉쇅瑜?諛쒖깮?쒗궢?덈떎.
      */
     public Map<String, Object> getExchangeAssets(Long userId, String exchange) {
         List<UserCredential> credentials = credentialRepository.findByUserId(userId);
@@ -45,9 +47,9 @@ public class ExchangeApiService {
         UserCredential targetCred = credentials.stream()
                 .filter(c -> c.getExchange().equalsIgnoreCase(exchange))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("연동되지 않은 거래소입니다: " + exchange));
+                .orElseThrow(() -> new BadRequestException("연동되지 않은 거래소입니다: " + exchange));
 
-        // 키 값의 앞뒤 공백 제거 (복사/붙여넣기 실수 방지)
+        // ??媛믪쓽 ?욌뮘 怨듬갚 ?쒓굅 (蹂듭궗/遺숈뿬?ｊ린 ?ㅼ닔 諛⑹?)
         String accessKey = encryptionUtil.decrypt(targetCred.getApiKey()).trim();
         String secretKey = encryptionUtil.decrypt(targetCred.getApiSecret()).trim();
 
@@ -68,11 +70,11 @@ public class ExchangeApiService {
                 assetInfo = getBybitAssets(accessKey, secretKey);
                 break;
             default:
-                throw new IllegalArgumentException("지원하지 않는 거래소입니다: " + exchange);
+                throw new BadRequestException("지원하지 않는 거래소입니다: " + exchange);
         }
 
         if (assetInfo == null) {
-            throw new RuntimeException(exchange + " 자산 정보를 가져오는데 실패했습니다.");
+            throw new ExternalApiException(exchange + " 자산 정보를 가져오는데 실패했습니다.");
         }
 
         Map<String, Object> result = new HashMap<>();
@@ -129,7 +131,7 @@ public class ExchangeApiService {
         if (response.getBody() != null) {
             double balance = Double.parseDouble(response.getBody().get("totalMarginBalance").toString());
             Double usdKrw = priceManager.getCurrentUsdKrw();
-            if (usdKrw == null || usdKrw == 0) usdKrw = 1450.0; // 기본값
+            if (usdKrw == null || usdKrw == 0) usdKrw = 1450.0; // 湲곕낯媛?
 
             return Map.of(
                     "mainBalance", balance,
@@ -146,7 +148,7 @@ public class ExchangeApiService {
         String endpoint = "/v1/accounts";
         
         try {
-            // 빗썸 신규 API(JWT 방식) 인증 토큰 생성
+            // 鍮쀬뜽 ?좉퇋 API(JWT 諛⑹떇) ?몄쬆 ?좏겙 ?앹꽦
             Algorithm algorithm = Algorithm.HMAC256(secretKey);
             String jwtToken = JWT.create()
                     .withClaim("access_key", accessKey)
@@ -159,17 +161,18 @@ public class ExchangeApiService {
 
             HttpEntity<Void> entity = new HttpEntity<>(headers);
             
-            // 신규 API 엔드포인트 호출 (/v1/accounts)
+            // ?좉퇋 API ?붾뱶?ъ씤???몄텧 (/v1/accounts)
             ResponseEntity<List> response = restTemplate.exchange(
                     apiUrl + endpoint, HttpMethod.GET, entity, List.class);
 
             double krw = 0;
+            double coinAssetKrw = 0;
             List<Map<String, String>> coins = new ArrayList<>();
 
             if (response.getBody() != null) {
                 for (Object obj : response.getBody()) {
                     Map<String, String> item = (Map<String, String>) obj;
-                    // 빗썸 신규 API의 필드명이 업비트와 동일하게 currency, balance인 경우
+                    // 鍮쀬뜽 ?좉퇋 API???꾨뱶紐낆씠 ?낅퉬?몄? ?숈씪?섍쾶 currency, balance??寃쎌슦
                     String currency = item.get("currency");
                     String balanceStr = item.get("balance");
                     
@@ -179,14 +182,25 @@ public class ExchangeApiService {
                     if ("KRW".equals(currency)) {
                         krw = balance;
                     } else if (balance > 0) {
+                        Double currentPrice = priceManager.getPrice("BT_" + currency.toUpperCase());
+                        if (currentPrice != null && currentPrice > 0) {
+                            coinAssetKrw += balance * currentPrice;
+                        }
                         coins.add(Map.of("currency", currency, "balance", String.valueOf(balance)));
                     }
                 }
-                return Map.of("mainBalance", krw, "mainUnit", "KRW", "balances", coins);
+                return Map.of(
+                        "mainBalance", krw,
+                        "mainUnit", "KRW",
+                        "balances", coins,
+                        "coinAssetKrw", coinAssetKrw,
+                        "totalAssetKrw", krw + coinAssetKrw,
+                        "totalAssetUnit", "KRW"
+                );
             }
         } catch (Exception e) {
-            log.error("Bithumb (JWT) API 호출 중 예외 발생: {}", e.getMessage());
-            throw new RuntimeException("Bithumb API 호출 실패: " + e.getMessage());
+            log.error("Bithumb (JWT) API ?몄텧 以??덉쇅 諛쒖깮: {}", e.getMessage());
+            throw new ExternalApiException("Bithumb API 호출 실패: " + e.getMessage(), e);
         }
         return null;
     }
@@ -228,7 +242,7 @@ public class ExchangeApiService {
     }
 
     /**
-     * 업비트 주문 실행
+     * ?낅퉬??二쇰Ц ?ㅽ뻾
      */
     public Map<String, Object> orderUpbit(Long userId, String symbol, String side, double volume, Double price, String ordType) {
         UserCredential credential = getCredential(userId, "UPBIT");
@@ -239,10 +253,10 @@ public class ExchangeApiService {
         
         Map<String, String> params = new HashMap<>();
         params.put("market", market);
-        params.put("side", side.toLowerCase()); // bid(매수), ask(매도)
+        params.put("side", side.toLowerCase()); // bid(留ㅼ닔), ask(留ㅻ룄)
         if (volume > 0) params.put("volume", String.valueOf(volume));
         if (price != null) params.put("price", String.valueOf(price));
-        params.put("ord_type", ordType.toLowerCase()); // limit(지정가), price(시장가 매수), market(시장가 매도)
+        params.put("ord_type", ordType.toLowerCase()); // limit(吏?뺢?), price(?쒖옣媛 留ㅼ닔), market(?쒖옣媛 留ㅻ룄)
 
         ArrayList<String> queryElements = new ArrayList<>();
         for(Map.Entry<String, String> entity : params.entrySet()) {
@@ -274,12 +288,12 @@ public class ExchangeApiService {
             return response.getBody();
         } catch (Exception e) {
             log.error("Upbit Order Error: {}", e.getMessage());
-            throw new RuntimeException("업비트 주문 실패: " + e.getMessage());
+            throw new ExternalApiException("업비트 주문 실패: " + e.getMessage(), e);
         }
     }
 
     /**
-     * 바이낸스 선물 주문 실행
+     * 諛붿씠?몄뒪 ?좊Ъ 二쇰Ц ?ㅽ뻾
      */
     public Map<String, Object> orderBinanceFutures(Long userId, String symbol, String side, String positionSide, double quantity, Double price, String type) {
         UserCredential credential = getCredential(userId, "BINANCE");
@@ -318,12 +332,12 @@ public class ExchangeApiService {
             return response.getBody();
         } catch (Exception e) {
             log.error("Binance Order Error: {}", e.getMessage());
-            throw new RuntimeException("바이낸스 주문 실패: " + e.getMessage());
+            throw new ExternalApiException("바이낸스 주문 실패: " + e.getMessage(), e);
         }
     }
 
     /**
-     * 빗썸 주문 실행 (V1 신규 API 기준)
+     * 鍮쀬뜽 二쇰Ц ?ㅽ뻾 (V1 ?좉퇋 API 湲곗?)
      */
     public Map<String, Object> orderBithumb(Long userId, String symbol, String side, double volume, Double price, String ordType) {
         UserCredential credential = getCredential(userId, "BITHUMB");
@@ -354,7 +368,7 @@ public class ExchangeApiService {
             String jwtToken = JWT.create()
                     .withClaim("access_key", accessKey)
                     .withClaim("nonce", UUID.randomUUID().toString())
-                    .withClaim("timestamp", System.currentTimeMillis()) // 빗썸은 타임스탬프 필수
+                    .withClaim("timestamp", System.currentTimeMillis()) // 鍮쀬뜽? ??꾩뒪?ы봽 ?꾩닔
                     .withClaim("query_hash", queryHash)
                     .withClaim("query_hash_alg", "SHA512")
                     .sign(algorithm);
@@ -370,12 +384,12 @@ public class ExchangeApiService {
             return response.getBody();
         } catch (Exception e) {
             log.error("Bithumb Order Error: {}", e.getMessage());
-            throw new RuntimeException("빗썸 주문 실패: " + e.getMessage());
+            throw new ExternalApiException("빗썸 주문 실패: " + e.getMessage(), e);
         }
     }
 
     /**
-     * 바이낸스 선물 레버리지 설정
+     * 諛붿씠?몄뒪 ?좊Ъ ?덈쾭由ъ? ?ㅼ젙
      */
     public Map<String, Object> setBinanceLeverage(Long userId, String symbol, int leverage) {
         UserCredential credential = getCredential(userId, "BINANCE");
@@ -398,12 +412,12 @@ public class ExchangeApiService {
             return response.getBody();
         } catch (Exception e) {
             log.error("Binance Leverage Set Error: {}", e.getMessage());
-            throw new RuntimeException("바이낸스 레버리지 설정 실패: " + e.getMessage());
+            throw new ExternalApiException("바이낸스 레버리지 설정 실패: " + e.getMessage(), e);
         }
     }
 
     /**
-     * 바이낸스 선물 조건부 주문 (SL/TP)
+     * 諛붿씠?몄뒪 ?좊Ъ 議곌굔遺 二쇰Ц (SL/TP)
      */
     public Map<String, Object> orderBinanceFuturesConditional(Long userId, String symbol, String side, String positionSide, double quantity, double stopPrice, String type) {
         UserCredential credential = getCredential(userId, "BINANCE");
@@ -422,7 +436,7 @@ public class ExchangeApiService {
         sb.append("&positionSide=").append(resolvedPositionSide);
         sb.append("&type=").append(type.toUpperCase()); // STOP_MARKET, TAKE_PROFIT_MARKET
         sb.append("&stopPrice=").append(normalizedStopPrice.stripTrailingZeros().toPlainString());
-        sb.append("&closePosition=true"); // 포지션 전량 종료
+        sb.append("&closePosition=true"); // ?ъ????꾨웾 醫낅즺
         sb.append("&timestamp=").append(timestamp);
 
         String queryString = sb.toString();
@@ -438,12 +452,12 @@ public class ExchangeApiService {
             return response.getBody();
         } catch (Exception e) {
             log.error("Binance Conditional Order Error: {}", e.getMessage());
-            throw new RuntimeException("바이낸스 조건부 주문 실패: " + e.getMessage());
+            throw new ExternalApiException("바이낸스 조건부 주문 실패: " + e.getMessage(), e);
         }
     }
 
     /**
-     * 바이낸스 선물 특정 코인의 현재 포지션 수량 조회
+     * 諛붿씠?몄뒪 ?좊Ъ ?뱀젙 肄붿씤???꾩옱 ?ъ????섎웾 議고쉶
      */
     public double getBinanceFuturesPosition(Long userId, String symbol) {
         UserCredential credential = getCredential(userId, "BINANCE");
@@ -464,7 +478,7 @@ public class ExchangeApiService {
         try {
             ResponseEntity<List> response = restTemplate.exchange(url, HttpMethod.GET, entity, List.class);
             if (response.getBody() != null && !response.getBody().isEmpty()) {
-                // 여러 포지션 모드(Hedge/One-way)가 있을 수 있으므로 SHORT 포지션 필터링
+                // ?щ윭 ?ъ???紐⑤뱶(Hedge/One-way)媛 ?덉쓣 ???덉쑝誘濡?SHORT ?ъ????꾪꽣留?
                 for (Object obj : response.getBody()) {
                     Map<String, Object> pos = (Map<String, Object>) obj;
                     if (expectedPositionSide.equalsIgnoreCase(pos.get("positionSide").toString())) {
@@ -475,12 +489,12 @@ public class ExchangeApiService {
             return 0.0;
         } catch (Exception e) {
             log.error("Binance Position Fetch Error: {}", e.getMessage());
-            return -1.0; // 에러 발생 시 -1 반환하여 체크 건너뛰기
+            return -1.0; // ?먮윭 諛쒖깮 ??-1 諛섑솚?섏뿬 泥댄겕 嫄대꼫?곌린
         }
     }
 
     /**
-     * 업비트 주문 상세 조회
+     * ?낅퉬??二쇰Ц ?곸꽭 議고쉶
      */
     public Map<String, Object> getOrderUpbit(Long userId, String orderId) {
         UserCredential credential = getCredential(userId, "UPBIT");
@@ -504,7 +518,7 @@ public class ExchangeApiService {
     }
 
     /**
-     * 업비트 주문 취소
+     * ?낅퉬??二쇰Ц 痍⑥냼
      */
     public Map<String, Object> cancelOrderUpbit(Long userId, String orderId) {
         UserCredential credential = getCredential(userId, "UPBIT");
@@ -570,7 +584,7 @@ public class ExchangeApiService {
     }
 
     /**
-     * 바이낸스 선물 주문 상세 조회
+     * 諛붿씠?몄뒪 ?좊Ъ 二쇰Ц ?곸꽭 議고쉶
      */
     public Map<String, Object> getOrderBinance(Long userId, String symbol, String orderId) {
         UserCredential credential = getCredential(userId, "BINANCE");
@@ -596,7 +610,7 @@ public class ExchangeApiService {
     }
 
     /**
-     * 바이낸스 선물 주문 취소
+     * 諛붿씠?몄뒪 ?좊Ъ 二쇰Ц 痍⑥냼
      */
     public Map<String, Object> cancelOrderBinance(Long userId, String symbol, String orderId) {
         UserCredential credential = getCredential(userId, "BINANCE");
@@ -654,7 +668,7 @@ public class ExchangeApiService {
         return credentialRepository.findByUserId(userId).stream()
                 .filter(c -> c.getExchange().equalsIgnoreCase(exchange))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("연동되지 않은 거래소입니다: " + exchange));
+                .orElseThrow(() -> new BadRequestException("연동되지 않은 거래소입니다: " + exchange));
     }
 
     private String resolveBinancePositionSide(Long userId, String requestedPositionSide) {
@@ -693,14 +707,14 @@ public class ExchangeApiService {
     private BinanceSymbolRules getBinanceSymbolRules(String binanceSymbol) {
         ResponseEntity<Map> response = restTemplate.getForEntity(BINANCE_EXCHANGE_INFO_URL, Map.class);
         if (response.getBody() == null || response.getBody().get("symbols") == null) {
-            throw new RuntimeException("Binance exchangeInfo response is empty");
+            throw new ExternalApiException("Binance exchangeInfo response is empty");
         }
 
         List<Map<String, Object>> symbols = (List<Map<String, Object>>) response.getBody().get("symbols");
         Map<String, Object> symbolInfo = symbols.stream()
                 .filter(item -> binanceSymbol.equalsIgnoreCase(String.valueOf(item.get("symbol"))))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Unsupported Binance futures symbol: " + binanceSymbol));
+                .orElseThrow(() -> new BadRequestException("Unsupported Binance futures symbol: " + binanceSymbol));
 
         String stepSize = null;
         String tickSize = null;
@@ -731,7 +745,7 @@ public class ExchangeApiService {
         BigDecimal steps = rawQuantity.divide(symbolRules.stepSize(), 0, RoundingMode.DOWN);
         BigDecimal normalized = steps.multiply(symbolRules.stepSize());
         if (normalized.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Normalized Binance quantity is zero: " + quantity);
+            throw new BadRequestException("Normalized Binance quantity is zero: " + quantity);
         }
         return normalized;
     }
@@ -752,7 +766,7 @@ public class ExchangeApiService {
         BigDecimal ticks = rawPrice.divide(symbolRules.tickSize(), 0, RoundingMode.DOWN);
         BigDecimal normalized = ticks.multiply(symbolRules.tickSize());
         if (normalized.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Normalized Binance price is zero: " + price);
+            throw new BadRequestException("Normalized Binance price is zero: " + price);
         }
         return normalized;
     }
@@ -766,7 +780,7 @@ public class ExchangeApiService {
             mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
             byte[] rawHmac = mac.doFinal(message.getBytes(StandardCharsets.UTF_8));
             return bytesToHex(rawHmac);
-        } catch (Exception e) { throw new RuntimeException(e); }
+        } catch (Exception e) { throw new ExternalApiException("서명 생성에 실패했습니다.", e); }
     }
 
     private byte[] hmacSha512(String secret, String message) {
@@ -774,7 +788,7 @@ public class ExchangeApiService {
             Mac mac = Mac.getInstance("HmacSHA512");
             mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA512"));
             return mac.doFinal(message.getBytes(StandardCharsets.UTF_8));
-        } catch (Exception e) { throw new RuntimeException(e); }
+        } catch (Exception e) { throw new ExternalApiException("서명 생성에 실패했습니다.", e); }
     }
 
     private String bytesToHex(byte[] bytes) {
@@ -787,3 +801,6 @@ public class ExchangeApiService {
         return Base64.getEncoder().encodeToString(bytes);
     }
 }
+
+
+

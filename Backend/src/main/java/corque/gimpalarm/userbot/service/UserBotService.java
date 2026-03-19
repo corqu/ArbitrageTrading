@@ -2,6 +2,7 @@ package corque.gimpalarm.userbot.service;
 
 import corque.gimpalarm.coin.dto.TradingRequest;
 import corque.gimpalarm.coin.service.TradingBotService;
+import corque.gimpalarm.common.exception.NotFoundException;
 import corque.gimpalarm.user.domain.User;
 import corque.gimpalarm.user.repository.UserRepository;
 import corque.gimpalarm.userbot.domain.UserBot;
@@ -33,7 +34,7 @@ public class UserBotService {
     @Transactional(readOnly = true)
     public List<UserBotResponseDto> getMyBots(String email) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new NotFoundException("User not found"));
 
         return userBotRepository.findAllByUser(user).stream()
                 .map(this::convertToDto)
@@ -43,7 +44,7 @@ public class UserBotService {
     @Transactional
     public UserBotResponseDto subscribeBot(Long userId, TradingRequest request) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new NotFoundException("User not found"));
 
         UserBot userBot = UserBot.builder()
                 .user(user)
@@ -69,10 +70,10 @@ public class UserBotService {
     @Transactional
     public UserBotResponseDto updateBot(Long userId, Long botId, TradingRequest request) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new NotFoundException("User not found"));
 
         UserBot userBot = userBotRepository.findByIdAndUser(botId, user)
-                .orElseThrow(() -> new RuntimeException("Bot not found or unauthorized"));
+                .orElseThrow(() -> new NotFoundException("Bot not found or unauthorized"));
 
         stopBotInMemory(user, userBot);
 
@@ -89,10 +90,10 @@ public class UserBotService {
     @Transactional
     public void deleteBot(String email, Long botId) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new NotFoundException("User not found"));
 
         UserBot userBot = userBotRepository.findByIdAndUser(botId, user)
-                .orElseThrow(() -> new RuntimeException("Bot not found or unauthorized"));
+                .orElseThrow(() -> new NotFoundException("Bot not found or unauthorized"));
 
         stopBotInMemory(user, userBot);
         userBotRepository.delete(userBot);
