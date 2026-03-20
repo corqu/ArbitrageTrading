@@ -18,16 +18,13 @@ public class KimpService {
 
     private final PriceManager priceManager;
 
-    // 수수료 및 슬리피지 설정 (비율로 환산, 0.0005 = 0.05%)
-    private static final double UPBIT_FEE = 0.0005;       // 업비트 현물 수수료 (0.05%)
-    private static final double BITHUMB_FEE = 0.0004;     // 빗썸 현물 수수료 (기본 0.04% 가정)
-    private static final double BINANCE_FUTURES_FEE = 0.0002; // 바이낸스 선물 수수료
-    private static final double SLIPPAGE = 0.001;         // 예상 슬리피지 (0.1%)
+    private static final double UPBIT_FEE = 0.0005;
+    private static final double BITHUMB_FEE = 0.0004;
+    private static final double BINANCE_FUTURES_FEE = 0.0002;
+    private static final double SLIPPAGE = 0.001;
 
     public Map<String, List<KimpResponseDto>> calculateAllPairs() {
         Double currentUsdKrw = priceManager.getCurrentUsdKrw();
-        
-        // 환율 데이터가 없으면 초기화를 보류하거나 기본값 사용
         double usdKrw = (currentUsdKrw == null || currentUsdKrw <= 0) ? 1450.0 : currentUsdKrw;
 
         Map<String, List<KimpResponseDto>> result = new HashMap<>();
@@ -37,44 +34,68 @@ public class KimpService {
         result.put("bt-bb", new ArrayList<>());
 
         priceManager.getAllPrices().keySet().stream()
-            .filter(key -> key.startsWith("UB_") || key.startsWith("BT_"))
-            .map(key -> key.substring(3))
-            .distinct()
-            .forEach(symbol -> {
-                Double ubPrice = priceManager.getPrice("UB_" + symbol);
-                Double btPrice = priceManager.getPrice("BT_" + symbol);
-                Double bnPrice = priceManager.getPrice("BN_F_" + symbol);
-                Double bbPrice = priceManager.getPrice("BY_" + symbol);
+                .filter(key -> key.startsWith("UB_") || key.startsWith("BT_"))
+                .map(key -> key.substring(3))
+                .distinct()
+                .forEach(symbol -> {
+                    Double ubPrice = priceManager.getPrice("UB_" + symbol);
+                    Double ubBestAsk = priceManager.getBestAsk("UB_" + symbol);
+                    Double ubBestBid = priceManager.getBestBid("UB_" + symbol);
+                    Double btPrice = priceManager.getPrice("BT_" + symbol);
+                    Double btBestAsk = priceManager.getBestAsk("BT_" + symbol);
+                    Double btBestBid = priceManager.getBestBid("BT_" + symbol);
+                    Double bnPrice = priceManager.getPrice("BN_F_" + symbol);
+                    Double bbPrice = priceManager.getPrice("BY_" + symbol);
 
-                Double fundingRate = priceManager.getFundingRate(symbol);
-                Double ubVolume = priceManager.getTradeVolume("UB_" + symbol);
-                Double btVolume = priceManager.getTradeVolume("BT_" + symbol);
+                    Double fundingRate = priceManager.getFundingRate(symbol);
+                    Double ubVolume = priceManager.getTradeVolume("UB_" + symbol);
+                    Double btVolume = priceManager.getTradeVolume("BT_" + symbol);
 
-                // 1. Upbit - Binance
-                if (ubPrice != null && bnPrice != null) {
-                    KimpResponseDto kimp = calculateKimp(symbol, "UPBIT", "BINANCE_FUTURES", 
-                        ubPrice, bnPrice, fundingRate, usdKrw, ubVolume, UPBIT_FEE);
-                    if (kimp != null) result.get("ub-bn").add(kimp);
-                }
-                // 2. Upbit - Bybit
-                if (ubPrice != null && bbPrice != null) {
-                    KimpResponseDto kimp = calculateKimp(symbol, "UPBIT", "BYBIT_FUTURES", 
-                        ubPrice, bbPrice, fundingRate, usdKrw, ubVolume, UPBIT_FEE);
-                    if (kimp != null) result.get("ub-bb").add(kimp);
-                }
-                // 3. Bithumb - Binance
-                if (btPrice != null && bnPrice != null) {
-                    KimpResponseDto kimp = calculateKimp(symbol, "BITHUMB", "BINANCE_FUTURES", 
-                        btPrice, bnPrice, fundingRate, usdKrw, btVolume, BITHUMB_FEE);
-                    if (kimp != null) result.get("bt-bn").add(kimp);
-                }
-                // 4. Bithumb - Bybit
-                if (btPrice != null && bbPrice != null) {
-                    KimpResponseDto kimp = calculateKimp(symbol, "BITHUMB", "BYBIT_FUTURES", 
-                        btPrice, bbPrice, fundingRate, usdKrw, btVolume, BITHUMB_FEE);
-                    if (kimp != null) result.get("bt-bb").add(kimp);
-                }
-            });
+                    if ((ubBestAsk != null || ubPrice != null) && bnPrice != null) {
+                        KimpResponseDto kimp = calculateKimp(symbol, "UPBIT", "BINANCE_FUTURES",
+                                ubPrice,
+                                ubBestAsk != null ? ubBestAsk : ubPrice,
+                                ubBestBid != null ? ubBestBid : ubPrice,
+                                bnPrice,
+                                fundingRate,
+                                usdKrw,
+                                ubVolume);
+                        if (kimp != null) result.get("ub-bn").add(kimp);
+                    }
+                    if ((ubBestAsk != null || ubPrice != null) && bbPrice != null) {
+                        KimpResponseDto kimp = calculateKimp(symbol, "UPBIT", "BYBIT_FUTURES",
+                                ubPrice,
+                                ubBestAsk != null ? ubBestAsk : ubPrice,
+                                ubBestBid != null ? ubBestBid : ubPrice,
+                                bbPrice,
+                                fundingRate,
+                                usdKrw,
+                                ubVolume);
+                        if (kimp != null) result.get("ub-bb").add(kimp);
+                    }
+                    if ((btBestAsk != null || btPrice != null) && bnPrice != null) {
+                        KimpResponseDto kimp = calculateKimp(symbol, "BITHUMB", "BINANCE_FUTURES",
+                                btPrice,
+                                btBestAsk != null ? btBestAsk : btPrice,
+                                btBestBid != null ? btBestBid : btPrice,
+                                bnPrice,
+                                fundingRate,
+                                usdKrw,
+                                btVolume);
+                        if (kimp != null) result.get("bt-bn").add(kimp);
+                    }
+                    if ((btBestAsk != null || btPrice != null) && bbPrice != null) {
+                        KimpResponseDto kimp = calculateKimp(symbol, "BITHUMB", "BYBIT_FUTURES",
+                                btPrice,
+                                btBestAsk != null ? btBestAsk : btPrice,
+                                btBestBid != null ? btBestBid : btPrice,
+                                bbPrice,
+                                fundingRate,
+                                usdKrw,
+                                btVolume);
+                        if (kimp != null) result.get("bt-bb").add(kimp);
+                    }
+                });
 
         return result;
     }
@@ -82,28 +103,92 @@ public class KimpService {
     public List<KimpResponseDto> calculateAllKimp() {
         Map<String, List<KimpResponseDto>> pairs = calculateAllPairs();
         List<KimpResponseDto> all = new ArrayList<>();
-        all.addAll(pairs.get("ub-bn"));
-        all.addAll(pairs.get("bt-bn"));
+        pairs.values().forEach(all::addAll);
         return all;
     }
 
-    private KimpResponseDto calculateKimp(String symbol, String domesticEx, String foreignEx, 
-                                      Double domesticPrice, Double foreignPrice, 
-                                      Double fundingRate, Double usdKrw, Double tradeVolume, double domesticFee) {
-        
-        if (domesticPrice == null || domesticPrice <= 0 || foreignPrice == null || foreignPrice <= 0) {
+    public Map<String, KimpResponseDto> calculatePairsForSymbol(String symbol) {
+        Double currentUsdKrw = priceManager.getCurrentUsdKrw();
+        double usdKrw = (currentUsdKrw == null || currentUsdKrw <= 0) ? 1450.0 : currentUsdKrw;
+
+        String upperSymbol = symbol.toUpperCase();
+        Double ubPrice = priceManager.getPrice("UB_" + upperSymbol);
+        Double ubBestAsk = priceManager.getBestAsk("UB_" + upperSymbol);
+        Double ubBestBid = priceManager.getBestBid("UB_" + upperSymbol);
+        Double btPrice = priceManager.getPrice("BT_" + upperSymbol);
+        Double btBestAsk = priceManager.getBestAsk("BT_" + upperSymbol);
+        Double btBestBid = priceManager.getBestBid("BT_" + upperSymbol);
+        Double bnPrice = priceManager.getPrice("BN_F_" + upperSymbol);
+        Double bbPrice = priceManager.getPrice("BY_" + upperSymbol);
+        Double fundingRate = priceManager.getFundingRate(upperSymbol);
+        Double ubVolume = priceManager.getTradeVolume("UB_" + upperSymbol);
+        Double btVolume = priceManager.getTradeVolume("BT_" + upperSymbol);
+
+        Map<String, KimpResponseDto> result = new HashMap<>();
+        result.put("ub-bn", (ubBestAsk != null || ubPrice != null) && bnPrice != null
+                ? calculateKimp(upperSymbol, "UPBIT", "BINANCE_FUTURES", ubPrice,
+                ubBestAsk != null ? ubBestAsk : ubPrice,
+                ubBestBid != null ? ubBestBid : ubPrice,
+                bnPrice, fundingRate, usdKrw, ubVolume)
+                : null);
+        result.put("ub-bb", (ubBestAsk != null || ubPrice != null) && bbPrice != null
+                ? calculateKimp(upperSymbol, "UPBIT", "BYBIT_FUTURES", ubPrice,
+                ubBestAsk != null ? ubBestAsk : ubPrice,
+                ubBestBid != null ? ubBestBid : ubPrice,
+                bbPrice, fundingRate, usdKrw, ubVolume)
+                : null);
+        result.put("bt-bn", (btBestAsk != null || btPrice != null) && bnPrice != null
+                ? calculateKimp(upperSymbol, "BITHUMB", "BINANCE_FUTURES", btPrice,
+                btBestAsk != null ? btBestAsk : btPrice,
+                btBestBid != null ? btBestBid : btPrice,
+                bnPrice, fundingRate, usdKrw, btVolume)
+                : null);
+        result.put("bt-bb", (btBestAsk != null || btPrice != null) && bbPrice != null
+                ? calculateKimp(upperSymbol, "BITHUMB", "BYBIT_FUTURES", btPrice,
+                btBestAsk != null ? btBestAsk : btPrice,
+                btBestBid != null ? btBestBid : btPrice,
+                bbPrice, fundingRate, usdKrw, btVolume)
+                : null);
+        return result;
+    }
+
+    private KimpResponseDto calculateKimp(String symbol, String domesticEx, String foreignEx,
+                                          Double standardDomesticPrice, Double entryDomesticPrice, Double exitDomesticPrice, Double foreignPrice,
+                                          Double fundingRate, Double usdKrw, Double tradeVolume) {
+
+        if ((standardDomesticPrice == null || standardDomesticPrice <= 0)
+                && (entryDomesticPrice == null || entryDomesticPrice <= 0)) {
+            return null;
+        }
+        if (foreignPrice == null || foreignPrice <= 0) {
             return null;
         }
 
-        double ratio = ((domesticPrice / (foreignPrice * usdKrw)) - 1) * 100;
-        
+        Double standardRatio = standardDomesticPrice != null && standardDomesticPrice > 0
+                ? calculateRatio(standardDomesticPrice, foreignPrice, usdKrw)
+                : null;
+        Double entryRatio = entryDomesticPrice != null && entryDomesticPrice > 0
+                ? calculateRatio(entryDomesticPrice, foreignPrice, usdKrw)
+                : standardRatio;
+        Double exitRatio = exitDomesticPrice != null && exitDomesticPrice > 0
+                ? calculateRatio(exitDomesticPrice, foreignPrice, usdKrw)
+                : standardRatio;
+        double ratio = standardRatio != null ? standardRatio : entryRatio;
+
         return KimpResponseDto.builder()
                 .symbol(symbol)
                 .domesticExchange(domesticEx)
                 .foreignExchange(foreignEx)
                 .ratio(ratio)
+                .standardRatio(standardRatio)
+                .entryRatio(entryRatio)
+                .exitRatio(exitRatio)
                 .fundingRate(fundingRate)
                 .tradeVolume(tradeVolume)
                 .build();
+    }
+
+    private double calculateRatio(double domesticPrice, double foreignPrice, double usdKrw) {
+        return ((domesticPrice / (foreignPrice * usdKrw)) - 1) * 100;
     }
 }

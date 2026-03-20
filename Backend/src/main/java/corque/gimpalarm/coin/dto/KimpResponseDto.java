@@ -16,8 +16,10 @@ public class KimpResponseDto {
     private String domesticExchange;
     private String foreignExchange;
     private double ratio;
+    private Double standardRatio;
+    private Double entryRatio;
+    private Double exitRatio;
     private Double fundingRate;
     private Double tradeVolume;
     private Instant time;
 }
-

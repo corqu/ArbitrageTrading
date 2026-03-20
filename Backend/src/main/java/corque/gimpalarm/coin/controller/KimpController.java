@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
@@ -22,18 +23,17 @@ public class KimpController {
     private final KimpService kimpService;
     private final CoinPriceService coinPriceService;
 
-    /**
-     * 현재 수익률 순으로 정렬된 김프/차익거래 리스트를 반환합니다.
-     */
     @GetMapping("/current")
     public ResponseEntity<List<KimpResponseDto>> getCurrentKimpList() {
         List<KimpResponseDto> currentList = kimpService.calculateAllKimp();
         return ResponseEntity.ok(currentList);
     }
 
-    /**
-     * 특정 코인의 과거 김프/펀딩피 히스토리를 반환합니다.
-     */
+    @GetMapping("/current/pairs")
+    public ResponseEntity<Map<String, List<KimpResponseDto>>> getCurrentKimpPairs() {
+        return ResponseEntity.ok(kimpService.calculateAllPairs());
+    }
+
     @GetMapping("/history")
     public ResponseEntity<List<KimpResponseDto>> getKimpHistory(
             @RequestParam String symbol,
@@ -47,6 +47,8 @@ public class KimpController {
                         .domesticExchange(h.getDomesticExchange())
                         .foreignExchange(h.getForeignExchange())
                         .ratio(h.getRatio())
+                        .standardRatio(h.getRatio())
+                        .entryRatio(h.getRatio())
                         .fundingRate(h.getFundingRate())
                         .tradeVolume(h.getTradeVolume())
                         .time(h.getTime())

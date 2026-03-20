@@ -157,8 +157,8 @@ public class TradingBotService {
                 .filter(k -> k.getSymbol().equalsIgnoreCase(trade.getRequest().getSymbol()))
                 .findFirst()
                 .ifPresent(k -> {
-                    if (trade.getEntryTime() != null && ChronoUnit.SECONDS.between(trade.getEntryTime(), LocalDateTime.now()) >= 60 && k.getRatio() > trade.getRequest().getEntryKimp()) {
-                        log.info(">>> [ENTERING-CANCEL] {} entry kimp recovered to {}. Start balance now.", botKey, k.getRatio());
+                    double entryRatio = k.getEntryRatio() != null ? k.getEntryRatio() : k.getRatio();
+                    if (trade.getEntryTime() != null && ChronoUnit.SECONDS.between(trade.getEntryTime(), LocalDateTime.now()) >= 180 && entryRatio > trade.getRequest().getEntryKimp()) {
                         balancePositions(botKey, trade);
                     }
                 });
@@ -198,12 +198,12 @@ public class TradingBotService {
         if (list == null) return;
 
         list.stream().filter(k -> k.getSymbol().equalsIgnoreCase(trade.getRequest().getSymbol())).findFirst().ifPresent(k -> {
-            if (k.getRatio() <= trade.getRequest().getEntryKimp()) {
+            double entryRatio = k.getEntryRatio() != null ? k.getEntryRatio() : k.getRatio();
+            if (entryRatio <= trade.getRequest().getEntryKimp()) {
                 log.info(">>> [MATCH] {} entry condition met", botKey);
                 try {
                     String symbol = trade.getRequest().getSymbol();
                     String domesticEx = trade.getRequest().getDomesticExchange().toUpperCase();
-
                     Double dPrice = priceManager.getPrice(("BITHUMB".equals(domesticEx) ? "BT_" : "UB_") + symbol);
                     Double fPrice = priceManager.getPrice("BN_F_" + symbol);
 
@@ -246,7 +246,7 @@ public class TradingBotService {
     public void processOngoingTrades() {
         activeBots.forEach((key, trade) -> {
             if (trade.getStatus() == BotStatus.ENTERING) {
-                if (trade.getEntryTime() != null && ChronoUnit.SECONDS.between(trade.getEntryTime(), LocalDateTime.now()) >= 60) {
+                if (trade.getEntryTime() != null && ChronoUnit.SECONDS.between(trade.getEntryTime(), LocalDateTime.now()) >= 180) {
                     balancePositions(key, trade);
                 }
             } else if (trade.getStatus() == BotStatus.HOLDING) {
@@ -298,8 +298,13 @@ public class TradingBotService {
             log.info(">>> [RESULT] domestic={}, foreign={}, target={}", dFilled, fFilled, minQty);
 
             if (minQty <= 0) {
-                botStatusSyncService.sync(trade.getUserId(), trade.getRequest(), botKey, BotStatus.ERROR);
-                activeBots.remove(botKey);
+                boolean recovered = resolveUnbalancedFill(botKey, trade, domesticEx, symbol, dFilled, fFilled);
+                if (recovered) {
+                    resetToWaiting(botKey, trade);
+                } else {
+                    botStatusSyncService.sync(trade.getUserId(), trade.getRequest(), botKey, BotStatus.ERROR);
+                    activeBots.remove(botKey);
+                }
                 return;
             }
 
@@ -403,14 +408,56 @@ public class TradingBotService {
         }
     }
 
+    private boolean resolveUnbalancedFill(String botKey, ActiveTrade trade, String domesticEx, String symbol,
+                                          double domesticFilledQty, double foreignFilledQty) {
+        try {
+            if (domesticFilledQty > 0) {
+                Map<String, Object> domesticCloseRes = "BITHUMB".equals(domesticEx)
+                        ? exchangeApiService.orderBithumb(trade.getUserId(), symbol, "ask", domesticFilledQty, null, "market")
+                        : exchangeApiService.orderUpbit(trade.getUserId(), symbol, "ask", domesticFilledQty, null, "market");
+                tradeOrderService.recordOrder(
+                        trade.getUserId(), botKey, domesticEx, "SPOT", "FAILSAFE_DOMESTIC",
+                        symbol, "SELL", null, "MARKET", domesticFilledQty, null, domesticCloseRes
+                );
+            }
+
+            if (foreignFilledQty > 0) {
+                Map<String, Object> foreignCloseRes = exchangeApiService.orderBinanceFutures(
+                        trade.getUserId(), symbol, "BUY", "SHORT", foreignFilledQty, null, "MARKET");
+                tradeOrderService.recordOrder(
+                        trade.getUserId(), botKey, "BINANCE", "FUTURES", "FAILSAFE_FOREIGN",
+                        symbol, "BUY", "SHORT", "MARKET", foreignFilledQty, null, foreignCloseRes
+                );
+            }
+            return true;
+        } catch (Exception e) {
+            log.error("Failsafe close error for {}: {}", botKey, e.getMessage());
+            return false;
+        }
+    }
+
+    private void resetToWaiting(String botKey, ActiveTrade trade) {
+        trade.setStatus(BotStatus.WAITING);
+        trade.setDomesticOrderId(null);
+        trade.setForeignOrderId(null);
+        trade.setFilledQty(0.0);
+        trade.setHedgedQty(0.0);
+        trade.setSlPrice(null);
+        trade.setTpPrice(null);
+        trade.setEntryTime(null);
+        persistExecutionState(botKey, trade);
+        botStatusSyncService.sync(trade.getUserId(), trade.getRequest(), botKey, BotStatus.WAITING);
+        log.info(">>> [RECOVERED] {} returned to waiting after failsafe close", botKey);
+    }
+
     private void checkExitCondition(String botKey, ActiveTrade trade, Map<String, List<KimpResponseDto>> allKimp) {
         String pairKey = resolvePairKey(trade.getRequest());
         List<KimpResponseDto> list = allKimp.get(pairKey);
         if (list == null) return;
 
         list.stream().filter(k -> k.getSymbol().equalsIgnoreCase(trade.getRequest().getSymbol())).findFirst().ifPresent(k -> {
-            if (k.getRatio() >= trade.getRequest().getExitKimp()) {
-                log.info(">>> [EXIT] exit condition met");
+            double exitRatio = k.getExitRatio() != null ? k.getExitRatio() : k.getRatio();
+            if (exitRatio >= trade.getRequest().getExitKimp()) {
                 triggerMarketExit(botKey, trade);
             }
         });
@@ -489,3 +536,5 @@ public class TradingBotService {
         return status;
     }
 }
+
+
