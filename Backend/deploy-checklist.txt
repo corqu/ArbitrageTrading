@@ -1,0 +1,30 @@
+Deployment Checklist
+
+1. DB schema
+- Verify `bot_trade_states.status` can store the new bot status enum values.
+- Verify `user_bot.status` can store the new user bot status enum values.
+- Verify `bot_trade_states.error_reason` can store enum string values without schema issues.
+
+2. Existing data compatibility
+- Verify existing `ENTERING` and `EXITING` rows restore correctly after restart.
+- Verify existing `error_reason` data does not conflict with the new enum-based storage.
+
+3. Manual flow checks
+- Confirm a new bot goes through `WAITING -> ENTRY_SUBMITTING -> ENTRY_PENDING -> HOLDING`.
+- Confirm an exit goes through `HOLDING -> EXIT_SUBMITTING -> EXIT_PENDING -> STOPPED`.
+- Confirm failed orders move the bot to `ERROR` with the expected `errorReason`.
+- Confirm active bots restore correctly after a server restart.
+
+4. Log checks
+- Confirm duplicate-entry guard logs appear when re-entry is attempted.
+- Confirm `transitionToError` logs include `botKey`, `reason`, order ids, and symbol.
+- Confirm restore and status sync logs look correct during startup.
+
+5. Realtime data checks
+- Confirm websocket payloads include `standardRatio`, `entryRatio`, and `exitRatio`.
+- Confirm symbol-specific kimp topics are received correctly on the frontend.
+
+6. Test runs
+- Run `.\gradlew.bat test --tests corque.gimpalarm.coin.service.TradingBotServiceTest`.
+- Run `.\gradlew.bat test --tests corque.gimpalarm.coin.service.BotStatusSyncServiceTest`.
+- If possible, run the full test suite once before deployment.

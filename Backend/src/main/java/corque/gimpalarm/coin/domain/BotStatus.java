@@ -1,5 +1,14 @@
 package corque.gimpalarm.coin.domain;
 
 public enum BotStatus {
-    WAITING, ENTERING, HOLDING, EXITING, STOPPED, ERROR
+    WAITING,
+    ENTRY_SUBMITTING,
+    ENTRY_PENDING,
+    ENTERING,
+    HOLDING,
+    EXIT_SUBMITTING,
+    EXIT_PENDING,
+    EXITING,
+    STOPPED,
+    ERROR
 }
