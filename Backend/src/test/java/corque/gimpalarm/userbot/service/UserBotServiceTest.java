@@ -56,6 +56,7 @@ class UserBotServiceTest {
 
         assertEquals(1, result.size());
         assertEquals("BTC", result.get(0).getSymbol());
+        assertEquals(2.0, result.get(0).getEntryKimp());
         assertEquals(UserBotStatus.WAITING, result.get(0).getStatus());
     }
 
@@ -72,12 +73,13 @@ class UserBotServiceTest {
 
         assertEquals(10L, result.getId());
         assertEquals("BTC", result.getSymbol());
+        assertEquals(request.getEntryKimp(), result.getEntryKimp());
         verify(tradingBotService).executeTradeForUser(1L, request);
-
         ArgumentCaptor<UserBot> captor = ArgumentCaptor.forClass(UserBot.class);
         verify(userBotRepository).save(captor.capture());
         assertEquals(UserBotStatus.WAITING, captor.getValue().getStatus());
         assertTrue(captor.getValue().isActive());
+        assertEquals(request.getEntryKimp(), captor.getValue().getEntryKimp());
     }
 
     @Test

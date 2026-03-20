@@ -9,6 +9,7 @@ import corque.gimpalarm.userbot.domain.UserBot;
 import corque.gimpalarm.userbot.domain.UserBotStatus;
 import corque.gimpalarm.userbot.repository.UserBotRepository;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -36,6 +37,7 @@ class BotStatusSyncServiceTest {
     }
 
     @Test
+    @DisplayName("sync가 함수들을 호출 잘 하는지 테스트")
     void syncUpdatesUserBotAndStateWhenBotExists() {
         User user = User.builder().id(1L).email("a@test.com").password("pw").nickname("nick").build();
         UserBot userBot = UserBot.builder()
@@ -67,6 +69,7 @@ class BotStatusSyncServiceTest {
     }
 
     @Test
+    @DisplayName("UserBot이 없는 경우 sync요청이 와도 무시되는지 확인")
     void syncDoesNothingWhenUserBotMissing() {
         TradingRequest request = new TradingRequest();
         request.setSymbol("BTC");

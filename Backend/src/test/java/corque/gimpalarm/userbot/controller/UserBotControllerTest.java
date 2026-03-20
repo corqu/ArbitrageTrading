@@ -54,13 +54,14 @@ class UserBotControllerTest {
                 .nickname("nick")
                 .build();
         TradingRequest request = new TradingRequest();
-        UserBotResponseDto dto = UserBotResponseDto.builder().id(10L).symbol("BTC").build();
+        UserBotResponseDto dto = UserBotResponseDto.builder().id(10L).symbol("BTC").entryKimp(2.0).build();
         when(userBotService.subscribeBot(1L, request)).thenReturn(dto);
 
         var response = userBotController.subscribeBot(principal, request);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(10L, response.getBody().getId());
+        assertEquals(2.0, response.getBody().getEntryKimp());
         verify(userBotService).subscribeBot(1L, request);
     }
 

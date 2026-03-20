@@ -1,6 +1,7 @@
 package corque.gimpalarm.user.service;
 
 import corque.gimpalarm.coin.dto.PriceManager;
+import corque.gimpalarm.common.exception.BadRequestException;
 import corque.gimpalarm.common.util.EncryptionUtil;
 import corque.gimpalarm.user.repository.UserCredentialRepository;
 import org.junit.jupiter.api.Test;
@@ -9,6 +10,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 
 class ExchangeApiServiceTest {
@@ -37,5 +39,21 @@ class ExchangeApiServiceTest {
         BigDecimal normalized = service.normalizePrice(0.01234567d, rules);
 
         assertEquals(new BigDecimal("0.0123"), normalized.stripTrailingZeros());
+    }
+
+    @Test
+    void normalizeQuantityThrowsWhenRoundedToZero() {
+        ExchangeApiService.BinanceSymbolRules rules =
+                new ExchangeApiService.BinanceSymbolRules(new BigDecimal("1"), new BigDecimal("0.0001"));
+
+        assertThrows(BadRequestException.class, () -> service.normalizeQuantity(0.1d, rules));
+    }
+
+    @Test
+    void normalizePriceThrowsWhenRoundedToZero() {
+        ExchangeApiService.BinanceSymbolRules rules =
+                new ExchangeApiService.BinanceSymbolRules(new BigDecimal("1"), new BigDecimal("10"));
+
+        assertThrows(BadRequestException.class, () -> service.normalizePrice(1.0d, rules));
     }
 }

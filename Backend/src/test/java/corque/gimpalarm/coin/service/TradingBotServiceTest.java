@@ -12,6 +12,7 @@ import corque.gimpalarm.user.domain.User;
 import corque.gimpalarm.user.repository.UserRepository;
 import corque.gimpalarm.user.service.ExchangeApiService;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -73,6 +74,7 @@ class TradingBotServiceTest {
     }
 
     @Test
+    @DisplayName("嫄곕옒??紐낆묶???대? ?쒖뒪?쒖뿉 留욊쾶 蹂寃쏀븯?붿? ?뺤씤")
     void resolvePairKeyMapsUpbitBinanceFuturesToKimpKey() {
         TradingRequest request = new TradingRequest();
         request.setDomesticExchange("UPBIT");
@@ -82,6 +84,7 @@ class TradingBotServiceTest {
     }
 
     @Test
+    @DisplayName("?좎?媛 ?놁쓣 ???먮윭瑜????섏??붿? ?뺤씤")
     void executeTradeForUserThrowsWhenUserMissing() {
         TradingRequest request = baseRequest();
         when(userRepository.findById(1L)).thenReturn(Optional.empty());
@@ -90,6 +93,7 @@ class TradingBotServiceTest {
     }
 
     @Test
+    @DisplayName("遊?援щ룆?댁젣??遊뉗씠 ??硫덉텛怨???젣?섎뒗吏 ?뺤씤")
     void executeTradeForUserStopRemovesBotAndSyncsStopped() {
         User user = User.builder().id(1L).email("a@test.com").build();
         TradingRequest request = baseRequest();
@@ -104,6 +108,7 @@ class TradingBotServiceTest {
     }
 
     @Test
+    @DisplayName("?ㅼ젙 媛寃⑹뿉 ?꾨떖?덉쓣 ??二쇰Ц?????ㅼ뼱媛?붿? ?뺤씤")
     void onPriceChangedEntersTradeWhenEntryConditionMatches() {
         User user = User.builder().id(1L).email("a@test.com").build();
         TradingRequest request = baseRequest();
@@ -136,6 +141,7 @@ class TradingBotServiceTest {
     }
 
     @Test
+    @DisplayName("理쒖떊 媛寃??낅뜲?댄듃媛 ?덈맟????二쇰Ц ?덈뱾?닿??붿? ?뺤씤")
     void onPriceChangedSkipsEntryWhenPricesAreMissing() {
         User user = User.builder().id(1L).email("a@test.com").build();
         TradingRequest request = baseRequest();
@@ -155,6 +161,7 @@ class TradingBotServiceTest {
     }
 
     @Test
+    @DisplayName("二쇰Ц ?ㅽ뙣 ???ъ????뺣━ ??遊뉗씠 ?湲곗긽?쒕줈 ?뚯븘媛?붿? ?뺤씤")
     void processOngoingTradesReturnsToWaitingWhenFailsafeCloseSucceeds() {
         User user = User.builder().id(1L).email("a@test.com").build();
         TradingRequest request = baseRequest();
@@ -190,6 +197,56 @@ class TradingBotServiceTest {
         verify(botStatusSyncService, atLeastOnce()).sync(1L, request, "1:BTC:UPBIT:BINANCE_FUTURES", BotStatus.WAITING);
         verify(botStatusSyncService, never()).sync(1L, request, "1:BTC:UPBIT:BINANCE_FUTURES", BotStatus.ERROR);
         assertTrue(tradingBotService.getBotStatus().containsKey("1:BTC:UPBIT:BINANCE_FUTURES"));
+    }
+
+    @Test
+    void onPriceChangedSkipsExitWhenOnlyStandardRatioMatchesButExitRatioDoesNot() {
+        User user = User.builder().id(1L).email("a@test.com").build();
+        TradingRequest request = baseRequest();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(kimpService.calculateAllPairs()).thenReturn(Map.of(
+                "ub-bn", List.of(KimpResponseDto.builder().symbol("BTC").ratio(6.0).standardRatio(6.0).exitRatio(4.0).build())
+        ));
+
+        tradingBotService.executeTradeForUser(1L, request);
+        Map<String, ?> activeBots = (Map<String, ?>) ReflectionTestUtils.getField(tradingBotService, "activeBots");
+        Object activeTrade = activeBots.get("1:BTC:UPBIT:BINANCE_FUTURES");
+        ReflectionTestUtils.setField(activeTrade, "status", BotStatus.HOLDING);
+        ReflectionTestUtils.setField(activeTrade, "filledQty", 2.0);
+        ReflectionTestUtils.setField(activeTrade, "hedgedQty", 2.0);
+
+        tradingBotService.onPriceChanged(new PriceChangedEvent("UB_BTC", 50000.0));
+
+        verify(exchangeApiService, never()).orderUpbit(anyLong(), any(), any(), anyDouble(), any(), any());
+        verify(exchangeApiService, never()).orderBinanceFutures(anyLong(), any(), any(), any(), anyDouble(), any(), any());
+        verify(botStatusSyncService, never()).sync(1L, request, "1:BTC:UPBIT:BINANCE_FUTURES", BotStatus.STOPPED);
+    }
+
+    @Test
+    void onPriceChangedExitsTradeWhenExitRatioMatches() {
+        User user = User.builder().id(1L).email("a@test.com").build();
+        TradingRequest request = baseRequest();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(kimpService.calculateAllPairs()).thenReturn(Map.of(
+                "ub-bn", List.of(KimpResponseDto.builder().symbol("BTC").ratio(4.0).standardRatio(4.0).exitRatio(6.0).build())
+        ));
+        when(exchangeApiService.orderUpbit(1L, "BTC", "ask", 2.0, null, "market"))
+                .thenReturn(Map.of("uuid", "exit-upbit-order-1"));
+        when(exchangeApiService.orderBinanceFutures(1L, "BTC", "BUY", "SHORT", 2.0, null, "MARKET"))
+                .thenReturn(Map.of("orderId", 54321L));
+
+        tradingBotService.executeTradeForUser(1L, request);
+        Map<String, ?> activeBots = (Map<String, ?>) ReflectionTestUtils.getField(tradingBotService, "activeBots");
+        Object activeTrade = activeBots.get("1:BTC:UPBIT:BINANCE_FUTURES");
+        ReflectionTestUtils.setField(activeTrade, "status", BotStatus.HOLDING);
+        ReflectionTestUtils.setField(activeTrade, "filledQty", 2.0);
+        ReflectionTestUtils.setField(activeTrade, "hedgedQty", 2.0);
+
+        tradingBotService.onPriceChanged(new PriceChangedEvent("UB_BTC", 50000.0));
+
+        verify(exchangeApiService).orderUpbit(1L, "BTC", "ask", 2.0, null, "market");
+        verify(exchangeApiService).orderBinanceFutures(1L, "BTC", "BUY", "SHORT", 2.0, null, "MARKET");
+        verify(botStatusSyncService).sync(1L, request, "1:BTC:UPBIT:BINANCE_FUTURES", BotStatus.STOPPED);
     }
 
     private TradingRequest baseRequest() {

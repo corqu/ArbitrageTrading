@@ -6,6 +6,7 @@ import corque.gimpalarm.coin.domain.BotStatus;
 import corque.gimpalarm.user.domain.User;
 import corque.gimpalarm.userbot.domain.UserBot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -37,6 +38,7 @@ class BotTradeStateServiceTest {
     }
 
     @Test
+    @DisplayName("서버 재시작시 존재하던 봇 등록")
     void initializeCreatesStateWhenMissing() {
         User user = User.builder().id(1L).email("a@test.com").password("pw").nickname("nick").build();
         UserBot userBot = UserBot.builder()
@@ -67,6 +69,7 @@ class BotTradeStateServiceTest {
     }
 
     @Test
+    @DisplayName("bot상태가 missing인경우 waiting으로 변경")
     void restoreReturnsWaitingSnapshotWhenStateMissing() {
         when(botTradeStateRepository.findByBotKey("missing")).thenReturn(Optional.empty());
 
@@ -78,6 +81,7 @@ class BotTradeStateServiceTest {
     }
 
     @Test
+    @DisplayName("봇 내부 수정시 업데이트 적용 여부")
     void updateExecutionUpdatesAllExecutionFields() {
         BotTradeState state = BotTradeState.builder().build();
         LocalDateTime now = LocalDateTime.now();
