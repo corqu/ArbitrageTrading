@@ -180,11 +180,6 @@ public class KimpService {
                 .standardRatio(standardRatio)
                 .entryRatio(entryRatio)
                 .exitRatio(exitRatio)
-                .standardDomesticPrice(standardDomesticPrice)
-                .entryDomesticPrice(entryDomesticPrice)
-                .exitDomesticPrice(exitDomesticPrice)
-                .foreignPrice(foreignPrice)
-                .usdKrw(usdKrw)
                 .fundingRate(fundingRate)
                 .tradeVolume(tradeVolume)
                 .build();

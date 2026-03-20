@@ -138,7 +138,7 @@ class TradingBotServiceTest {
         verify(tradeOrderService).recordOrder(eq(1L), eq("1:BTC:UPBIT:BINANCE_FUTURES"), eq("BINANCE"),
                 eq("FUTURES"), eq("ENTRY_FOREIGN"), eq("BTC"), eq("SELL"), eq("SHORT"), eq("LIMIT"),
                 eq(2.0), eq(40.0), any());
-        verify(botStatusSyncService).sync(1L, request, "1:BTC:UPBIT:BINANCE_FUTURES", BotStatus.ENTERING);
+        verify(botStatusSyncService).sync(1L, request, "1:BTC:UPBIT:BINANCE_FUTURES", BotStatus.ENTRY_PENDING);
     }
 
     @Test

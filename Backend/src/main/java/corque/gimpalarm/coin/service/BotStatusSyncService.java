@@ -2,6 +2,7 @@ package corque.gimpalarm.coin.service;
 
 import corque.gimpalarm.botstate.domain.BotTradeState;
 import corque.gimpalarm.botstate.service.BotTradeStateService;
+import corque.gimpalarm.coin.domain.BotErrorReason;
 import corque.gimpalarm.coin.domain.BotStatus;
 import corque.gimpalarm.coin.dto.TradingRequest;
 import corque.gimpalarm.userbot.domain.UserBotStatus;
@@ -21,11 +22,11 @@ public class BotStatusSyncService {
 
     @Transactional
     public void sync(Long userId, TradingRequest request, String botKey, BotStatus status) {
-        sync(userId, request, botKey, status, status == BotStatus.ERROR ? "Bot entered error state" : null);
+        sync(userId, request, botKey, status, status == BotStatus.ERROR ? BotErrorReason.UNKNOWN : null);
     }
 
     @Transactional
-    public void sync(Long userId, TradingRequest request, String botKey, BotStatus status, String errorReason) {
+    public void sync(Long userId, TradingRequest request, String botKey, BotStatus status, BotErrorReason errorReason) {
         userBotRepository.findByUserIdAndSymbolIgnoreCaseAndDomesticExchangeIgnoreCaseAndForeignExchangeIgnoreCase(
                         userId,
                         request.getSymbol(),

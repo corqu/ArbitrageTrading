@@ -3,6 +3,7 @@ package corque.gimpalarm.coin.service;
 import corque.gimpalarm.coin.domain.KimchPremium;
 import corque.gimpalarm.coin.dto.KimpResponseDto;
 import corque.gimpalarm.coin.dto.PriceChangedEvent;
+import corque.gimpalarm.coin.dto.RealtimeKimpDto;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -106,8 +107,14 @@ public class KimpBroadcaster {
     }
 
     private void publishPairUpdate(String pairKey, KimpResponseDto dto) {
-        messagingTemplate.convertAndSend("/topic/kimp/" + pairKey, List.of(dto));
-        messagingTemplate.convertAndSend(buildSymbolTopic(pairKey, dto.getSymbol()), dto);
+        RealtimeKimpDto realtimeDto = RealtimeKimpDto.builder()
+                .symbol(dto.getSymbol())
+                .standardRatio(dto.getStandardRatio())
+                .entryRatio(dto.getEntryRatio())
+                .exitRatio(dto.getExitRatio())
+                .build();
+        messagingTemplate.convertAndSend("/topic/kimp/" + pairKey, List.of(realtimeDto));
+        messagingTemplate.convertAndSend(buildSymbolTopic(pairKey, dto.getSymbol()), realtimeDto);
     }
 
     private String buildSymbolTopic(String pairKey, String symbol) {
