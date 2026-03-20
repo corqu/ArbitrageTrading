@@ -30,12 +30,14 @@ public class PriceManager {
     public void updateBestAsk(String key, double price) {
         if (price > 0) {
             bestAskPrices.put(key, price);
+            eventPublisher.publishEvent(new PriceChangedEvent(key, price));
         }
     }
 
     public void updateBestBid(String key, double price) {
         if (price > 0) {
             bestBidPrices.put(key, price);
+            eventPublisher.publishEvent(new PriceChangedEvent(key, price));
         }
     }
 

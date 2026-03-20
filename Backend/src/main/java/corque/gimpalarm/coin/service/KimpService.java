@@ -173,16 +173,18 @@ public class KimpService {
         Double exitRatio = exitDomesticPrice != null && exitDomesticPrice > 0
                 ? calculateRatio(exitDomesticPrice, foreignPrice, usdKrw)
                 : standardRatio;
-        double ratio = standardRatio != null ? standardRatio : entryRatio;
-
         return KimpResponseDto.builder()
                 .symbol(symbol)
                 .domesticExchange(domesticEx)
                 .foreignExchange(foreignEx)
-                .ratio(ratio)
                 .standardRatio(standardRatio)
                 .entryRatio(entryRatio)
                 .exitRatio(exitRatio)
+                .standardDomesticPrice(standardDomesticPrice)
+                .entryDomesticPrice(entryDomesticPrice)
+                .exitDomesticPrice(exitDomesticPrice)
+                .foreignPrice(foreignPrice)
+                .usdKrw(usdKrw)
                 .fundingRate(fundingRate)
                 .tradeVolume(tradeVolume)
                 .build();

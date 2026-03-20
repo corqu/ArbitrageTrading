@@ -114,11 +114,30 @@ const App: React.FC = () => {
           if (msg.body) {
             try {
               const data = JSON.parse(msg.body);
-              if (Array.isArray(data)) {
-                setKimpList(data);
-                setLoading(false);
-              }
-            } catch (e) {}
+              setKimpList((prev) => {
+                const updates = Array.isArray(data) ? data : [data];
+                let next = [...prev];
+
+                updates.forEach((newItem: KimchPremium) => {
+                  const idx = next.findIndex(
+                    (item) =>
+                      item.symbol === newItem.symbol &&
+                      item.domesticExchange === newItem.domesticExchange &&
+                      item.foreignExchange === newItem.foreignExchange,
+                  );
+                  if (idx !== -1) {
+                    // 필드별 업데이트 (ratio 제거 고려)
+                    next[idx] = { ...next[idx], ...newItem };
+                  } else {
+                    next.push(newItem);
+                  }
+                });
+                return [...next]; // 확실한 리렌더링을 위해 새 배열 반환
+              });
+              setLoading(false);
+            } catch (e) {
+              console.error("WS 데이터 파싱 에러:", e);
+            }
           }
         });
       },
@@ -287,6 +306,7 @@ const App: React.FC = () => {
               element={
                 isLoggedIn ? (
                   <MyPage
+                    kimpList={kimpList}
                     email={email}
                     nickname={nickname}
                     handleUpdateProfile={handleUpdateProfile}

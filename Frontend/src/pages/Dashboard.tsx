@@ -31,6 +31,9 @@ interface DashboardProps {
 type SortKey =
   | "symbol"
   | "ratio"
+  | "standardRatio"
+  | "entryRatio"
+  | "exitRatio"
   | "fundingRate"
   | "tradeVolume"
   | "adjustedApr";
@@ -104,7 +107,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           id: `${rawTime ?? "point"}-${index}`,
           time: rawTime ?? null,
           timeLabel: date ? formatChartTimeLabel(date, range) : fallbackLabel,
-          ratio: parseFloat(Number(item.ratio ?? 0).toFixed(2)),
+          standardRatio: parseFloat(Number(item.standardRatio ?? item.ratio ?? 0).toFixed(2)),
         };
       });
       setHistoryData(formattedData);
@@ -116,12 +119,17 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const filteredList = useMemo(() => {
+    const foreignExMatch =
+      selectedForeignExchange === "BINANCE"
+        ? "BINANCE_FUTURES"
+        : "BYBIT_FUTURES";
     return kimpList.filter(
       (item) =>
         item.domesticExchange === selectedDomesticExchange &&
+        item.foreignExchange === foreignExMatch &&
         item.symbol.toLowerCase().includes(searchTerm.toLowerCase()),
     );
-  }, [kimpList, searchTerm, selectedDomesticExchange]);
+  }, [kimpList, searchTerm, selectedDomesticExchange, selectedForeignExchange]);
 
   const sortedKimpList = useMemo(() => {
     return [...filteredList].sort((a, b) => {
@@ -144,7 +152,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const gradientOffset = useMemo(() => {
     if (historyData.length === 0) return 0;
-    const ratios = historyData.map((i) => i.ratio);
+    const ratios = historyData.map((i) => i.standardRatio);
     const max = Math.max(...ratios),
       min = Math.min(...ratios);
     if (max <= 0) return 0;
@@ -311,7 +319,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           <span className="label">평균 김치 프리미엄</span>
           <span className="value">
             {(
-              filteredList.reduce((acc, curr) => acc + (curr.ratio || 0), 0) /
+              filteredList.reduce((acc, curr) => acc + (curr.standardRatio ?? 0), 0) /
               (filteredList.length || 1)
             ).toFixed(2)}
             %
@@ -342,11 +350,25 @@ const Dashboard: React.FC<DashboardProps> = ({
                   {sortKey === "symbol" && (sortOrder === "asc" ? "↑" : "↓")}
                 </th>
                 <th
-                  onClick={() => toggleSort("ratio")}
+                  onClick={() => toggleSort("standardRatio")}
                   style={{ cursor: "pointer" }}
                 >
-                  김프 (%){" "}
-                  {sortKey === "ratio" && (sortOrder === "asc" ? "↑" : "↓")}
+                  표준김프 (%){" "}
+                  {sortKey === "standardRatio" && (sortOrder === "asc" ? "↑" : "↓")}
+                </th>
+                <th
+                  onClick={() => toggleSort("entryRatio")}
+                  style={{ cursor: "pointer" }}
+                >
+                  매수기준김프 (%){" "}
+                  {sortKey === "entryRatio" && (sortOrder === "asc" ? "↑" : "↓")}
+                </th>
+                <th
+                  onClick={() => toggleSort("exitRatio")}
+                  style={{ cursor: "pointer" }}
+                >
+                  매도기준김프 (%){" "}
+                  {sortKey === "exitRatio" && (sortOrder === "asc" ? "↑" : "↓")}
                 </th>
                 <th
                   onClick={() => toggleSort("fundingRate")}
@@ -391,10 +413,22 @@ const Dashboard: React.FC<DashboardProps> = ({
                       <div className="symbol-cell">{item.symbol}</div>
                     </td>
                     <td
-                      className={item.ratio >= 0 ? "positive" : "negative"}
+                      className={(item.standardRatio ?? 0) >= 0 ? "positive" : "negative"}
                       style={{ fontWeight: 700 }}
                     >
-                      {item.ratio.toFixed(2)}%
+                      {item.standardRatio != null ? item.standardRatio.toFixed(2) : "-"}%
+                    </td>
+                    <td
+                      className={(item.entryRatio ?? 0) >= 0 ? "positive" : "negative"}
+                      style={{ fontWeight: 700 }}
+                    >
+                      {item.entryRatio != null ? item.entryRatio.toFixed(2) : "-"}%
+                    </td>
+                    <td
+                      className={(item.exitRatio ?? 0) >= 0 ? "positive" : "negative"}
+                      style={{ fontWeight: 700 }}
+                    >
+                      {item.exitRatio != null ? item.exitRatio.toFixed(2) : "-"}%
                     </td>
                     <td
                       style={{
@@ -419,7 +453,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                   </tr>
                   {selectedSymbol === item.symbol && (
                     <tr className="expanded-row">
-                      <td colSpan={5}>
+                      <td colSpan={6}>
                         <div className="expanded-content">
                           <div
                             style={{

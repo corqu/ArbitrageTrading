@@ -65,7 +65,7 @@ public class KimpBroadcaster {
             }
 
             snapshot.put(symbol, updated);
-            messagingTemplate.convertAndSend("/topic/kimp/" + pairKey, List.of(updated));
+            publishPairUpdate(pairKey, updated);
         }
     }
 
@@ -100,9 +100,18 @@ public class KimpBroadcaster {
             List<KimpResponseDto> snapshot = new ArrayList<>(pairSnapshots.get(pairKey).values());
             snapshot.sort(Comparator.comparing(KimpResponseDto::getSymbol));
             for (KimpResponseDto dto : snapshot) {
-                messagingTemplate.convertAndSend("/topic/kimp/" + pairKey, List.of(dto));
+                publishPairUpdate(pairKey, dto);
             }
         }
+    }
+
+    private void publishPairUpdate(String pairKey, KimpResponseDto dto) {
+        messagingTemplate.convertAndSend("/topic/kimp/" + pairKey, List.of(dto));
+        messagingTemplate.convertAndSend(buildSymbolTopic(pairKey, dto.getSymbol()), dto);
+    }
+
+    private String buildSymbolTopic(String pairKey, String symbol) {
+        return "/topic/kimp/" + pairKey + "/" + symbol.toUpperCase();
     }
 
     private Map<String, List<KimpResponseDto>> getSnapshotLists() {
@@ -149,22 +158,43 @@ public class KimpBroadcaster {
                 .toList();
     }
 
+    private Double averageRatio(Double first, Double second, double fallback) {
+        if (first != null && second != null) {
+            return (first + second) / 2.0;
+        }
+        if (first != null) {
+            return first;
+        }
+        if (second != null) {
+            return second;
+        }
+        return fallback;
+    }
+
     private KimchPremium buildAverageKimp(String symbol, KimpResponseDto ub, KimpResponseDto bt, String foreignEx) {
-        double avgRatio;
+        double avgStandardRatio;
+        Double avgEntryRatio;
+        Double avgExitRatio;
         Double fundingRate;
         Double tradeVolume;
 
         if (ub != null && bt != null) {
-            avgRatio = (ub.getRatio() + bt.getRatio()) / 2.0;
+            avgStandardRatio = (ub.getStandardRatio() + bt.getStandardRatio()) / 2.0;
+            avgEntryRatio = averageRatio(ub.getEntryRatio(), bt.getEntryRatio(), avgStandardRatio);
+            avgExitRatio = averageRatio(ub.getExitRatio(), bt.getExitRatio(), avgStandardRatio);
             fundingRate = ub.getFundingRate();
             tradeVolume = (ub.getTradeVolume() != null ? ub.getTradeVolume() : 0.0)
                     + (bt.getTradeVolume() != null ? bt.getTradeVolume() : 0.0);
         } else if (ub != null) {
-            avgRatio = ub.getRatio();
+            avgStandardRatio = ub.getStandardRatio();
+            avgEntryRatio = ub.getEntryRatio();
+            avgExitRatio = ub.getExitRatio();
             fundingRate = ub.getFundingRate();
             tradeVolume = ub.getTradeVolume();
         } else if (bt != null) {
-            avgRatio = bt.getRatio();
+            avgStandardRatio = bt.getStandardRatio();
+            avgEntryRatio = bt.getEntryRatio();
+            avgExitRatio = bt.getExitRatio();
             fundingRate = bt.getFundingRate();
             tradeVolume = bt.getTradeVolume();
         } else {
@@ -175,7 +205,9 @@ public class KimpBroadcaster {
                 .symbol(symbol)
                 .domesticExchange("AVERAGE")
                 .foreignExchange(foreignEx)
-                .ratio(avgRatio)
+                .standardRatio(avgStandardRatio)
+                .entryRatio(avgEntryRatio)
+                .exitRatio(avgExitRatio)
                 .fundingRate(fundingRate)
                 .tradeVolume(tradeVolume)
                 .build();

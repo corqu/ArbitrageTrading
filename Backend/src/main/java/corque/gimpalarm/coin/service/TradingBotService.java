@@ -63,6 +63,7 @@ public class TradingBotService {
 
     private final Map<String, ActiveTrade> activeBots = new ConcurrentHashMap<>();
     private final Set<String> balancingBots = ConcurrentHashMap.newKeySet();
+    private final Set<String> enteringBots = ConcurrentHashMap.newKeySet();
 
     public void loadActiveBots(List<UserBot> activeUserBots) {
         for (UserBot bot : activeUserBots) {
@@ -157,7 +158,7 @@ public class TradingBotService {
                 .filter(k -> k.getSymbol().equalsIgnoreCase(trade.getRequest().getSymbol()))
                 .findFirst()
                 .ifPresent(k -> {
-                    double entryRatio = k.getEntryRatio() != null ? k.getEntryRatio() : k.getRatio();
+                    double entryRatio = k.getEntryRatio() != null ? k.getEntryRatio() : k.getStandardRatio();
                     if (trade.getEntryTime() != null && ChronoUnit.SECONDS.between(trade.getEntryTime(), LocalDateTime.now()) >= 180 && entryRatio > trade.getRequest().getEntryKimp()) {
                         balancePositions(botKey, trade);
                     }
@@ -198,8 +199,13 @@ public class TradingBotService {
         if (list == null) return;
 
         list.stream().filter(k -> k.getSymbol().equalsIgnoreCase(trade.getRequest().getSymbol())).findFirst().ifPresent(k -> {
-            double entryRatio = k.getEntryRatio() != null ? k.getEntryRatio() : k.getRatio();
+            double entryRatio = k.getEntryRatio() != null ? k.getEntryRatio() : k.getStandardRatio();
             if (entryRatio <= trade.getRequest().getEntryKimp()) {
+                if (!enteringBots.add(botKey)) {
+                    log.info(">>> [ENTRY-SKIP] already entering: {}", botKey);
+                    return;
+                }
+
                 log.info(">>> [MATCH] {} entry condition met", botKey);
                 try {
                     String symbol = trade.getRequest().getSymbol();
@@ -208,6 +214,8 @@ public class TradingBotService {
                     Double fPrice = priceManager.getPrice("BN_F_" + symbol);
 
                     if (dPrice == null || fPrice == null) return;
+
+                    trade.setStatus(BotStatus.ENTERING);
 
                     double qty = trade.getRequest().getAmountKrw() / dPrice;
                     trade.setTotalTargetQty(qty);
@@ -230,13 +238,14 @@ public class TradingBotService {
                     trade.setDomesticOrderId(extractDomesticOrderId(dRes));
                     trade.setForeignOrderId(String.valueOf(fRes.get("orderId")));
                     trade.setEntryTime(LocalDateTime.now());
-                    trade.setStatus(BotStatus.ENTERING);
                     persistExecutionState(botKey, trade);
                     botStatusSyncService.sync(trade.getUserId(), trade.getRequest(), botKey, BotStatus.ENTERING);
                 } catch (Exception e) {
                     log.error("Entry Error: {}", e.getMessage());
                     botStatusSyncService.sync(trade.getUserId(), trade.getRequest(), botKey, BotStatus.ERROR);
                     activeBots.remove(botKey);
+                } finally {
+                    enteringBots.remove(botKey);
                 }
             }
         });
@@ -456,7 +465,7 @@ public class TradingBotService {
         if (list == null) return;
 
         list.stream().filter(k -> k.getSymbol().equalsIgnoreCase(trade.getRequest().getSymbol())).findFirst().ifPresent(k -> {
-            double exitRatio = k.getExitRatio() != null ? k.getExitRatio() : k.getRatio();
+            double exitRatio = k.getExitRatio() != null ? k.getExitRatio() : k.getStandardRatio();
             if (exitRatio >= trade.getRequest().getExitKimp()) {
                 triggerMarketExit(botKey, trade);
             }

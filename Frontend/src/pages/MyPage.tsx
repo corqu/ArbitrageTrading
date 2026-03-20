@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
+import SockJS from "sockjs-client";
+import { Client } from "@stomp/stompjs";
 import {
   Activity,
   ShieldAlert,
@@ -12,10 +14,11 @@ import {
   Settings,
   Save,
 } from "lucide-react";
-import { SubscribedBot } from "../types";
+import { SubscribedBot, KimchPremium } from "../types";
 
 interface MyPageProps {
-  // ... (rest of props)
+  kimpList: KimchPremium[];
+// ... rest of props
 
   nickname: string;
   handleUpdateProfile: (e: React.FormEvent) => Promise<void>;
@@ -41,6 +44,7 @@ interface MyPageProps {
 }
 
 const MyPage: React.FC<MyPageProps> = ({
+  kimpList,
   email,
   nickname,
   handleUpdateProfile,
@@ -79,6 +83,94 @@ const MyPage: React.FC<MyPageProps> = ({
   const [tradeOrders, setTradeOrders] = useState<any[]>([]);
   const [subscribedBots, setSubscribedBots] = useState<SubscribedBot[]>([]);
   const [isUpdatingBot, setIsUpdatingBot] = useState<string | null>(null);
+  
+  // 실시간 봇 전용 김프 맵 (symbol-domestic-foreign -> KimchPremium)
+  const [realTimeBotKimpMap, setRealTimeBotKimpMap] = useState<Record<string, KimchPremium>>({});
+  const stompClientRef = useRef<Client | null>(null);
+  const subscriptionsRef = useRef<Record<string, any>>({});
+
+  // 봇 전용 김프 찾기 헬퍼 (성능 최적화: kimpList를 맵으로 변환하여 캐싱 고려)
+  const getBotKimp = (bot: SubscribedBot) => {
+    const key = `${bot.symbol}-${bot.domesticExchange}-${bot.foreignExchange}`.toUpperCase();
+    if (realTimeBotKimpMap[key]) return realTimeBotKimpMap[key];
+
+    if (!kimpList || kimpList.length === 0) return undefined;
+    
+    // kimpList 검색 최적화
+    const botDomEx = bot.domesticExchange?.toUpperCase();
+    const botSymbol = bot.symbol?.toUpperCase();
+    const botForEx = bot.foreignExchange?.toUpperCase();
+    const foreignExMatch = botForEx === "BINANCE" ? "BINANCE_FUTURES" : botForEx === "BYBIT" ? "BYBIT_FUTURES" : botForEx;
+
+    return kimpList.find(k => 
+      k.symbol?.toUpperCase() === botSymbol && 
+      k.domesticExchange?.toUpperCase() === botDomEx && 
+      k.foreignExchange?.toUpperCase() === foreignExMatch
+    );
+  };
+
+  // 개별 봇 웹소켓 연결 및 구독 (stompClient 생성 로직 안정화)
+  useEffect(() => {
+    if (subscribedBots.length === 0) return;
+
+    if (stompClientRef.current?.active) {
+      // 이미 연결되어 있다면 구독만 갱신 (필요한 경우)
+      return;
+    }
+
+    const client = new Client({
+      webSocketFactory: () => new SockJS("/ws-stomp"),
+      reconnectDelay: 5000,
+      heartbeatIncoming: 4000,
+      heartbeatOutgoing: 4000,
+      onConnect: () => {
+        console.log("MyPage WS Connected");
+        subscribedBots.forEach((bot) => {
+          const dom = bot.domesticExchange.toUpperCase() === "UPBIT" ? "ub" : "bt";
+          const forEx = bot.foreignExchange.toUpperCase() === "BINANCE" ? "bn" : "bb";
+          const topic = `/topic/kimp/${dom}-${forEx}/${bot.symbol.toUpperCase()}`;
+
+          if (!subscriptionsRef.current[topic]) {
+            subscriptionsRef.current[topic] = client.subscribe(topic, (msg) => {
+              if (msg.body) {
+                const data = JSON.parse(msg.body);
+                const kimpData = Array.isArray(data) ? data[0] : data;
+                const botKey = `${bot.symbol}-${bot.domesticExchange}-${bot.foreignExchange}`.toUpperCase();
+                setRealTimeBotKimpMap((prev) => {
+                  // 값이 실제로 변했을 때만 상태 업데이트하여 리렌더링 방지
+                  if (prev[botKey]?.standardRatio === kimpData.standardRatio && 
+                      prev[botKey]?.entryRatio === kimpData.entryRatio &&
+                      prev[botKey]?.exitRatio === kimpData.exitRatio) {
+                    return prev;
+                  }
+                  return { ...prev, [botKey]: kimpData };
+                });
+              }
+            });
+          }
+        });
+      },
+    });
+
+    client.activate();
+    stompClientRef.current = client;
+
+    return () => {
+      // 페이지를 아예 떠날 때만 비활성화
+      // Note: 여기서 바로 deactivate하면 잦은 렌더링 시 소켓이 끊겼다 붙었다 함
+    };
+  }, [subscribedBots.length]); // 리스트 개수 변할 때만 다시 시도
+
+  // 컴포넌트 언마운트 시에만 소켓 정리
+  useEffect(() => {
+    return () => {
+      if (stompClientRef.current) {
+        stompClientRef.current.deactivate();
+        stompClientRef.current = null;
+      }
+      subscriptionsRef.current = {};
+    };
+  }, []);
 
   const fetchAssetData = async (
     exchange: string,
@@ -875,6 +967,35 @@ const MyPage: React.FC<MyPageProps> = ({
                         {bot.domesticExchange} ↔ {bot.foreignExchange}
                       </span>
                     </div>
+
+                    {/* 실시간 김프 표시 영역 (표준, 매수, 매도 3종) */}
+                    <div style={{ display: 'flex', gap: '1.2rem', background: 'rgba(0,0,0,0.15)', padding: '0.6rem 1rem', borderRadius: '0.6rem', flexWrap: 'wrap' }}>
+                      <div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.1rem' }}>표준 김프</div>
+                        <div style={{ fontSize: '0.85rem', fontWeight: 700 }} className={(getBotKimp(bot)?.standardRatio ?? getBotKimp(bot)?.ratio ?? 0) >= 0 ? 'positive' : 'negative'}>
+                          {getBotKimp(bot) ? `${(getBotKimp(bot)!.standardRatio ?? getBotKimp(bot)!.ratio).toFixed(2)}%` : '-'}
+                        </div>
+                      </div>
+                      <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
+                      <div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.1rem' }}>매수 김프</div>
+                        <div style={{ fontSize: '0.85rem', fontWeight: 700 }} className={(getBotKimp(bot)?.entryRatio ?? getBotKimp(bot)?.ratio ?? 0) >= 0 ? 'positive' : 'negative'}>
+                          {getBotKimp(bot) 
+                            ? `${(getBotKimp(bot)!.entryRatio ?? getBotKimp(bot)!.ratio).toFixed(2)}%` 
+                            : '-'}
+                        </div>
+                      </div>
+                      <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
+                      <div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.1rem' }}>매도 김프</div>
+                        <div style={{ fontSize: '0.85rem', fontWeight: 700 }} className={(getBotKimp(bot)?.exitRatio ?? getBotKimp(bot)?.ratio ?? 0) >= 0 ? 'positive' : 'negative'}>
+                          {getBotKimp(bot) 
+                            ? `${(getBotKimp(bot)!.exitRatio ?? getBotKimp(bot)!.ratio).toFixed(2)}%` 
+                            : '-'}
+                        </div>
+                      </div>
+                    </div>
+
                     <div style={{ display: 'flex', gap: '0.6rem' }}>
                       <button
                         onClick={() => toggleBotActive(bot)}

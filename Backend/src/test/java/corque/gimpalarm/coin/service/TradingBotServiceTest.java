@@ -35,6 +35,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -116,7 +117,7 @@ class TradingBotServiceTest {
         when(kimpService.calculateAllPairs()).thenReturn(Map.of(
                 "ub-bn", List.of(KimpResponseDto.builder()
                         .symbol("BTC")
-                        .ratio(1.0)
+                        .standardRatio(1.0)
                         .build())
         ));
         when(exchangeApiService.orderUpbit(1L, "BTC", "bid", 2.0, 50000.0, "limit"))
@@ -141,7 +142,36 @@ class TradingBotServiceTest {
     }
 
     @Test
-    @DisplayName("理쒖떊 媛寃??낅뜲?댄듃媛 ?덈맟????二쇰Ц ?덈뱾?닿??붿? ?뺤씤")
+    void onPriceChangedDoesNotEnterTwiceWhenReentrantPriceEventArrives() {
+        User user = User.builder().id(1L).email("a@test.com").build();
+        TradingRequest request = baseRequest();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(kimpService.calculateAllPairs()).thenReturn(Map.of(
+                "ub-bn", List.of(KimpResponseDto.builder()
+                        .symbol("BTC")
+                        .standardRatio(1.0)
+                        .entryRatio(1.0)
+                        .build())
+        ));
+        doAnswer(invocation -> {
+            tradingBotService.onPriceChanged(new PriceChangedEvent("UB_BTC", 50000.0));
+            return Map.of("uuid", "upbit-order-1");
+        }).when(exchangeApiService).orderUpbit(1L, "BTC", "bid", 2.0, 50000.0, "limit");
+        when(exchangeApiService.orderBinanceFutures(1L, "BTC", "SELL", "SHORT", 2.0, 40.0, "LIMIT"))
+                .thenReturn(Map.of("orderId", 12345L));
+        when(botTradeStateService.findByBotKey("1:BTC:UPBIT:BINANCE_FUTURES")).thenReturn(Optional.empty());
+
+        priceManager.updatePrice("UB_BTC", 50000.0);
+        priceManager.updatePrice("BN_F_BTC", 40.0);
+        tradingBotService.executeTradeForUser(1L, request);
+
+        tradingBotService.onPriceChanged(new PriceChangedEvent("UB_BTC", 50000.0));
+
+        verify(exchangeApiService).orderUpbit(1L, "BTC", "bid", 2.0, 50000.0, "limit");
+        verify(exchangeApiService).orderBinanceFutures(1L, "BTC", "SELL", "SHORT", 2.0, 40.0, "LIMIT");
+    }
+
+    @Test
     void onPriceChangedSkipsEntryWhenPricesAreMissing() {
         User user = User.builder().id(1L).email("a@test.com").build();
         TradingRequest request = baseRequest();
@@ -149,7 +179,7 @@ class TradingBotServiceTest {
         when(kimpService.calculateAllPairs()).thenReturn(Map.of(
                 "ub-bn", List.of(KimpResponseDto.builder()
                         .symbol("BTC")
-                        .ratio(1.0)
+                        .standardRatio(1.0)
                         .build())
         ));
 
@@ -167,7 +197,7 @@ class TradingBotServiceTest {
         TradingRequest request = baseRequest();
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(kimpService.calculateAllPairs()).thenReturn(Map.of(
-                "ub-bn", List.of(KimpResponseDto.builder().symbol("BTC").ratio(1.0).build())
+                "ub-bn", List.of(KimpResponseDto.builder().symbol("BTC").standardRatio(1.0).build())
         ));
         when(exchangeApiService.orderUpbit(1L, "BTC", "bid", 2.0, 50000.0, "limit"))
                 .thenReturn(Map.of("uuid", "upbit-order-1"));
@@ -205,7 +235,7 @@ class TradingBotServiceTest {
         TradingRequest request = baseRequest();
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(kimpService.calculateAllPairs()).thenReturn(Map.of(
-                "ub-bn", List.of(KimpResponseDto.builder().symbol("BTC").ratio(6.0).standardRatio(6.0).exitRatio(4.0).build())
+                "ub-bn", List.of(KimpResponseDto.builder().symbol("BTC").standardRatio(6.0).exitRatio(4.0).build())
         ));
 
         tradingBotService.executeTradeForUser(1L, request);
@@ -228,7 +258,7 @@ class TradingBotServiceTest {
         TradingRequest request = baseRequest();
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(kimpService.calculateAllPairs()).thenReturn(Map.of(
-                "ub-bn", List.of(KimpResponseDto.builder().symbol("BTC").ratio(4.0).standardRatio(4.0).exitRatio(6.0).build())
+                "ub-bn", List.of(KimpResponseDto.builder().symbol("BTC").standardRatio(4.0).exitRatio(6.0).build())
         ));
         when(exchangeApiService.orderUpbit(1L, "BTC", "ask", 2.0, null, "market"))
                 .thenReturn(Map.of("uuid", "exit-upbit-order-1"));

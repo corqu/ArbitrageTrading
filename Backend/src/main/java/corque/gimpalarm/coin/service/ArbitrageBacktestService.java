@@ -52,13 +52,13 @@ public class ArbitrageBacktestService {
 
         for (KimchPremium current : history) {
             // [추가] 비정상적인 김프 데이터(-15% 이하 등)는 가격 수집 오류로 간주하고 무시
-            if (current.getRatio() == null || current.getRatio() < -15.0) {
+            if (current.getStandardRatio() == null || current.getStandardRatio() < -15.0) {
                 continue;
             }
 
             if (!isHolding) {
                 // 진입: 목표 김프보다 버퍼만큼 더 떨어져야 실제 체결 (호가 경쟁 고려)
-                if (current.getRatio() <= (entryKimp - TICK_BUFFER)) {
+                if (current.getStandardRatio() <= (entryKimp - TICK_BUFFER)) {
                     isHolding = true;
                     entryPoint = current;
                     lastFundingTime = current.getTime();
@@ -82,16 +82,16 @@ public class ArbitrageBacktestService {
                 }
 
                 // 2. 탈출 조건 체크: 목표 김프보다 버퍼만큼 더 올라야 실제 체결
-                if (current.getRatio() >= (exitKimp + TICK_BUFFER)) {
+                if (current.getStandardRatio() >= (exitKimp + TICK_BUFFER)) {
                     isHolding = false;
                     totalTrades++;
                     
                     // 실제 시장가 체결 시 목표가보다 조금 더 유리하거나 불리하게 체결될 수 있지만,
                     // 백테스트에서는 목표가(exitKimp)에 버퍼를 더한 값 정도로 수익을 제한하는 것이 합리적임.
                     // 만약 데이터가 2%를 건너뛰고 바로 50%가 찍혔더라도 봇은 지정가 혹은 조건부 시장가로 2% 근처에서 나갔을 것이기 때문.
-                    double executionRatio = Math.min(current.getRatio(), exitKimp + TICK_BUFFER + 0.1); // 최대 목표가 + 0.25% 정도로 제한
+                    double executionRatio = Math.min(current.getStandardRatio(), exitKimp + TICK_BUFFER + 0.1); // 최대 목표가 + 0.25% 정도로 제한
                     
-                    double tradeKimpProfit = (executionRatio - entryPoint.getRatio()) - (TOTAL_FEE_ROUNDTRIP * 100);
+                    double tradeKimpProfit = (executionRatio - entryPoint.getStandardRatio()) - (TOTAL_FEE_ROUNDTRIP * 100);
                     accumulatedKimpProfit += tradeKimpProfit;
                     
                     long duration = Duration.between(entryPoint.getTime(), current.getTime()).toMillis();

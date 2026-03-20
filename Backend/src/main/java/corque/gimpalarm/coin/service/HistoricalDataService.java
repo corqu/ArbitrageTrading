@@ -31,47 +31,47 @@ public class HistoricalDataService {
     private final String BYBIT_FUNDING_URL = "https://api.bybit.com/v5/market/funding/history?category=linear&symbol=%sUSDT&limit=100";
 
     /**
-     * 비동기로 6개월치 과거 데이터를 수집합니다.
-     * 이미 데이터가 존재하면 실행하지 않습니다.
+     * ??쑬猷욄묾怨뺤쨮 6揶쏆뮇?←㎉??⑥눊援??怨쀬뵠?怨? ??륁춿??몃빍??
+     * ??? ?怨쀬뵠?怨? 鈺곕똻???롢늺 ??쎈뻬??? ??녿뮸??덈뼄.
      */
     @Async
     public void importSixMonthsHistory() {
-        // 데이터 존재 여부 대략 확인 (BTC 데이터가 최근 1시간 이내에 있는지 등 - 여기선 심볼 리스트 존재 여부로 대체 가능하나 
-        // 좀 더 정확하게는 InfluxDB 쿼리 필요. 일단 로그로 중복 수집 주의 알림)
-        log.info("과거 데이터 수집 프로세스 가동...");
+        // ?怨쀬뵠??鈺곕똻????? ?????類ㅼ뵥 (BTC ?怨쀬뵠?怨? 筌ㅼ뮄??1??볦퍢 ??沅????덈뮉筌왖 ??- ??由???????귐딅뮞??鈺곕똻?????嚥???筌?揶쎛?館釉??
+        // ?ヂ ???類μ넇??띿쓺??InfluxDB ?묒눖???袁⑹뒄. ??곕뼊 嚥≪뮄?뉑에?餓λ쵎????륁춿 雅뚯눘?????뵝)
+        log.info("?⑥눊援??怨쀬뵠????륁춿 ?袁⑥쨮?紐꾨뮞 揶쎛??..");
 
         List<SupportedCoin> coins = coinRepository.findAll();
         if (coins.isEmpty()) return;
 
-        // 1. 과거 환율 데이터 수집 (업비트 KRW-USDT 1시간봉 기준)
+        // 1. ?⑥눊援???륁몛 ?怨쀬뵠????륁춿 (??낇돩??KRW-USDT 1??볦퍢??疫꿸퀣?)
         Map<Long, Double> exchangeRates = fetchUpbitHistory("KRW-USDT", 180);
         
         for (SupportedCoin coin : coins) {
             try {
                 String symbol = coin.getSymbol();
                 
-                // 2. 국내 거래소 데이터 수집 (업비트, 빗썸)
+                // 2. ??沅?椰꾧퀡????怨쀬뵠????륁춿 (??낇돩?? ??щ쑞)
                 Map<Long, Double> upbitPrices = coin.isUpbit() ? fetchUpbitHistory("KRW-" + symbol, 180) : new HashMap<>();
                 Map<Long, Double> bithumbPrices = coin.isBithumb() ? fetchBithumbHistory(symbol) : new HashMap<>();
 
-                // 3. 해외 거래소 데이터 수집 (바이낸스, 바이비트)
+                // 3. ??곸뇚 椰꾧퀡????怨쀬뵠????륁춿 (獄쏅뗄??紐꾨뮞, 獄쏅뗄?좈뜮袁る뱜)
                 Map<Long, Double> binancePrices = coin.isBinance() ? fetchBinanceHistory(symbol, 180) : new HashMap<>();
                 Map<Long, Double> bybitPrices = coin.isBybit() ? fetchBybitHistory(symbol, 180) : new HashMap<>();
 
-                // 4. 펀딩비 데이터 수집
+                // 4. ????명돩 ?怨쀬뵠????륁춿
                 Map<Long, Double> bnFunding = coin.isBinance() ? fetchBinanceFundingHistory(symbol) : new HashMap<>();
                 Map<Long, Double> bbFunding = coin.isBybit() ? fetchBybitFundingHistory(symbol) : new HashMap<>();
 
-                // 5. 김프 계산 및 저장 (국내 평균 vs 바이낸스, 국내 평균 vs 바이비트)
+                // 5. 繹먃???④쑴沅?獄?????(??沅????뇧 vs 獄쏅뗄??紐꾨뮞, ??沅????뇧 vs 獄쏅뗄?좈뜮袁る뱜)
                 processAndSaveAveragedHistory(symbol, upbitPrices, bithumbPrices, binancePrices, bnFunding, exchangeRates, "BINANCE_FUTURES");
                 processAndSaveAveragedHistory(symbol, upbitPrices, bithumbPrices, bybitPrices, bbFunding, exchangeRates, "BYBIT_FUTURES");
 
-                Thread.sleep(500); // Rate limit 방지
+                Thread.sleep(500); // Rate limit 獄쎻뫗?
             } catch (Exception e) {
-                log.error("{} 과거 수집 실패: {}", coin.getSymbol(), e.getMessage());
+                log.error("{} ?⑥눊援???륁춿 ??쎈솭: {}", coin.getSymbol(), e.getMessage());
             }
         }
-        log.info("모든 과거 데이터 수집 완료");
+        log.info("筌뤴뫀諭??⑥눊援??怨쀬뵠????륁춿 ?袁⑥┷");
     }
 
     private void processAndSaveAveragedHistory(String symbol, Map<Long, Double> upbit, Map<Long, Double> bithumb, 
@@ -102,7 +102,9 @@ public class HistoricalDataService {
                         .symbol(symbol)
                         .domesticExchange("AVERAGE")
                         .foreignExchange(foreignEx)
-                        .ratio(ratio)
+                        .standardRatio(ratio)
+                        .entryRatio(ratio)
+                        .exitRatio(ratio)
                         .fundingRate(fRate)
                         .tradeVolume(0.0)
                         .build();
@@ -113,7 +115,7 @@ public class HistoricalDataService {
 
         if (!history.isEmpty()) {
             coinPriceService.saveKimchPremiums(history);
-            log.info("{} - {} 히스토리 {}건 저장", symbol, foreignEx, history.size());
+            log.info("{} - {} historical records saved: {}", symbol, foreignEx, history.size());
         }
     }
 
@@ -126,11 +128,11 @@ public class HistoricalDataService {
                 List<List<Object>> list = (List<List<Object>>) res.get("data");
                 for (List<Object> candle : list) {
                     long ts = Long.parseLong(candle.get(0).toString());
-                    double price = Double.parseDouble(candle.get(2).toString()); // 종가
+                    double price = Double.parseDouble(candle.get(2).toString()); // ?ル굛?
                     data.put(ts, price);
                 }
             }
-        } catch (Exception e) { log.warn("빗썸 {} 히스토리 누락", symbol); }
+        } catch (Exception e) { log.warn("??щ쑞 {} ??됰뮞?醫듼봺 ?袁⑥뵭", symbol); }
         return data;
     }
 
@@ -149,7 +151,7 @@ public class HistoricalDataService {
                     data.put(ts, price);
                 }
             }
-        } catch (Exception e) { log.warn("바이비트 {} 히스토리 누락", symbol); }
+        } catch (Exception e) { log.warn("獄쏅뗄?좈뜮袁る뱜 {} ??됰뮞?醫듼봺 ?袁⑥뵭", symbol); }
         return data;
     }
 
@@ -167,7 +169,7 @@ public class HistoricalDataService {
                     data.put(ts, rate);
                 }
             }
-        } catch (Exception e) { log.warn("바이비트 {} 펀딩비 누락", symbol); }
+        } catch (Exception e) { log.warn("獄쏅뗄?좈뜮袁る뱜 {} ????명돩 ?袁⑥뵭", symbol); }
         return data;
     }
 

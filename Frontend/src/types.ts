@@ -3,6 +3,9 @@ export interface KimchPremium {
   domesticExchange: string;
   foreignExchange: string;
   ratio: number;
+  standardRatio?: number | null;
+  entryRatio?: number | null;
+  exitRatio?: number | null;
   fundingRate: number | null;
   adjustedApr: number | null;
   liquidationPrice: number | null;
