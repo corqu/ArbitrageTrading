@@ -77,7 +77,22 @@ const MyPage: React.FC<MyPageProps> = ({
   const [foreignAssets, setForeignAssets] = useState<any>(null);
   const [isLoadingForeign, setIsLoadingForeign] = useState(false);
 
-  const [tradeOrders, setTradeOrders] = useState<any[]>([]);
+  const [tradeOrders, setTradeOrders] = useState<
+    {
+      id: string;
+      botKey: string;
+      symbol: string;
+      phase: string;
+      exchange: string;
+      quantity: string;
+      requestedQty: string;
+      executedQty: string;
+      remainingQty: string;
+      requestedPrice: string;
+      averagePrice: string;
+      status: string;
+    }[]
+  >([]);
   const [subscribedBots, setSubscribedBots] = useState<SubscribedBot[]>([]);
   const [isUpdatingBot, setIsUpdatingBot] = useState<string | null>(null);
   
@@ -1219,33 +1234,49 @@ const MyPage: React.FC<MyPageProps> = ({
           style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}
         >
           {tradeOrders.length > 0 ? (
-            tradeOrders.map((pair) => (
+            tradeOrders.map((order) => (
               <div
-                key={pair.id}
+                key={order.id}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 4px 1fr",
+                  gridTemplateColumns: "1.4fr 0.8fr 1.2fr 1fr 1fr",
                   background: "rgba(0,0,0,0.15)",
                   border: "1px solid var(--border-color)",
                   borderRadius: "0.6rem",
+                  overflow: "hidden",
                 }}
               >
-                <div style={{ padding: "0.8rem" }}>
-                  {pair.upbit && (
-                    <div>
-                      {pair.upbit.symbol} {pair.upbit.side} @
-                      {pair.upbit.price?.toLocaleString()}
-                    </div>
-                  )}
+                <div style={{ padding: "0.8rem", display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <div style={{ fontWeight: 700 }}>{order.symbol}</div>
+                  <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                    {order.exchange}
+                  </div>
                 </div>
-                <div style={{ background: "var(--border-color)" }} />
-                <div style={{ padding: "0.8rem" }}>
-                  {pair.binance && (
-                    <div>
-                      {pair.binance.symbol} {pair.binance.side} @
-                      {pair.binance.price?.toFixed(2)}
-                    </div>
-                  )}
+                <div style={{ padding: "0.8rem", borderLeft: "1px solid var(--border-color)" }}>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.3rem" }}>
+                    단계
+                  </div>
+                  <div style={{ fontWeight: 700 }}>{order.phase}</div>
+                </div>
+                <div style={{ padding: "0.8rem", borderLeft: "1px solid var(--border-color)" }}>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.3rem" }}>
+                    수량
+                  </div>
+                  <div style={{ fontWeight: 700 }}>{order.quantity}</div>
+                </div>
+                <div style={{ padding: "0.8rem", borderLeft: "1px solid var(--border-color)" }}>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.3rem" }}>
+                    체결가
+                  </div>
+                  <div style={{ fontWeight: 700 }}>
+                    {order.averagePrice !== "-" ? order.averagePrice : order.requestedPrice}
+                  </div>
+                </div>
+                <div style={{ padding: "0.8rem", borderLeft: "1px solid var(--border-color)" }}>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.3rem" }}>
+                    상태
+                  </div>
+                  <div style={{ fontWeight: 700 }}>{order.status}</div>
                 </div>
               </div>
             ))
