@@ -11,10 +11,11 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  AreaChart,
-  Area,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
+  Legend,
 } from "recharts";
 import type { KimchPremium } from "../types";
 
@@ -108,6 +109,8 @@ const Dashboard: React.FC<DashboardProps> = ({
           time: rawTime ?? null,
           timeLabel: date ? formatChartTimeLabel(date, range) : fallbackLabel,
           standardRatio: parseFloat(Number(item.standardRatio ?? item.ratio ?? 0).toFixed(2)),
+          entryRatio: parseFloat(Number(item.entryRatio ?? item.standardRatio ?? item.ratio ?? 0).toFixed(2)),
+          exitRatio: parseFloat(Number(item.exitRatio ?? item.standardRatio ?? item.ratio ?? 0).toFixed(2)),
         };
       });
       setHistoryData(formattedData);
@@ -149,16 +152,6 @@ const Dashboard: React.FC<DashboardProps> = ({
         : (valB as number) - (valA as number);
     });
   }, [filteredList, sortKey, sortOrder]);
-
-  const gradientOffset = useMemo(() => {
-    if (historyData.length === 0) return 0;
-    const ratios = historyData.map((i) => i.standardRatio);
-    const max = Math.max(...ratios),
-      min = Math.min(...ratios);
-    if (max <= 0) return 0;
-    if (min >= 0) return 1;
-    return max / (max - min);
-  }, [historyData]);
 
   const formatVolume = (volume: number | null) => {
     if (!volume) return "-";
@@ -527,45 +520,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                               </div>
                             ) : (
                               <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={historyData}>
-                                  <defs>
-                                    <linearGradient
-                                      id="splitColor"
-                                      x1="0"
-                                      y1="0"
-                                      x2="0"
-                                      y2="1"
-                                    >
-                                      <stop
-                                        offset={gradientOffset}
-                                        stopColor="#10b981"
-                                        stopOpacity={0.8}
-                                      />
-                                      <stop
-                                        offset={gradientOffset}
-                                        stopColor="#ef4444"
-                                        stopOpacity={0.8}
-                                      />
-                                    </linearGradient>
-                                    <linearGradient
-                                      id="splitFill"
-                                      x1="0"
-                                      y1="0"
-                                      x2="0"
-                                      y2="1"
-                                    >
-                                      <stop
-                                        offset={gradientOffset}
-                                        stopColor="#10b981"
-                                        stopOpacity={0.3}
-                                      />
-                                      <stop
-                                        offset={gradientOffset}
-                                        stopColor="#ef4444"
-                                        stopOpacity={0.3}
-                                      />
-                                    </linearGradient>
-                                  </defs>
+                                <LineChart data={historyData}>
                                   <CartesianGrid
                                     strokeDasharray="3 3"
                                     stroke="rgba(255,255,255,0.05)"
@@ -585,6 +540,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                                     tickLine={false}
                                     tickFormatter={(v) => `${v.toFixed(2)}%`}
                                   />
+                                  <Legend />
                                   <Tooltip
                                     contentStyle={{
                                       backgroundColor: "var(--card-bg)",
@@ -601,14 +557,32 @@ const Dashboard: React.FC<DashboardProps> = ({
                                       "김프",
                                     ]}
                                   />
-                                  <Area
+                                  <Line
                                     type="monotone"
-                                    dataKey="ratio"
-                                    stroke="url(#splitColor)"
-                                    fill="url(#splitFill)"
+                                    dataKey="standardRatio"
+                                    name="현재 김프"
+                                    stroke="#38bdf8"
                                     strokeWidth={2}
+                                    dot={false}
+                                    activeDot={{ r: 4 }}
                                   />
-                                </AreaChart>
+                                  <Line
+                                    type="monotone"
+                                    dataKey="entryRatio"
+                                    name="진입 김프"
+                                    stroke="#10b981"
+                                    strokeWidth={2}
+                                    dot={false}
+                                  />
+                                  <Line
+                                    type="monotone"
+                                    dataKey="exitRatio"
+                                    name="청산 김프"
+                                    stroke="#f59e0b"
+                                    strokeWidth={2}
+                                    dot={false}
+                                  />
+                                </LineChart>
                               </ResponsiveContainer>
                             )}
                           </div>

@@ -26,7 +26,7 @@ public class JwtTokenProvider {
             @Value("${jwt.token.secret-key}") String secretKey,
             @Value("${jwt.token.access-expire-length}") long accessTokenValidity,
             @Value("${jwt.token.refresh-expire-length}") long refreshTokenValidity,
-            @Value("${app.security.require-ssl:false}") boolean secureCookie) {
+            @Value("${app.security.secure-cookies:false}") boolean secureCookie) {
         this.key = Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8));
         this.accessTokenValidity = accessTokenValidity;
         this.refreshTokenValidity = refreshTokenValidity;

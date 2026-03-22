@@ -7,19 +7,16 @@ import {
   ShieldAlert,
   RefreshCw,
   Repeat,
-  User as UserIcon,
-  ChevronDown,
   Play,
   Square,
   Settings,
   Save,
 } from "lucide-react";
-import { SubscribedBot, KimchPremium } from "../types";
+import type { SubscribedBot, KimchPremium } from "../types";
 
 interface MyPageProps {
   kimpList: KimchPremium[];
-// ... rest of props
-
+  email: string;
   nickname: string;
   handleUpdateProfile: (e: React.FormEvent) => Promise<void>;
   newNickname: string;
@@ -220,7 +217,7 @@ const MyPage: React.FC<MyPageProps> = ({
 
   const toggleBotActive = async (bot: SubscribedBot) => {
     try {
-      await axios.post(`/api/user-bots/toggle`, { 
+      await axios.post(`/api/trading/execute`, {
         symbol: bot.symbol, 
         domesticExchange: bot.domesticExchange, 
         foreignExchange: bot.foreignExchange,
