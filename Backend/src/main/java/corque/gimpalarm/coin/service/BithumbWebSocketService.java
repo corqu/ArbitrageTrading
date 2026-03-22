@@ -61,8 +61,7 @@ public class BithumbWebSocketService {
                     
                     if (ticker.getContent() != null && ticker.getContent().getClosePrice() != null) {
                         double price = Double.parseDouble(ticker.getContent().getClosePrice());
-                        
-                        // 가격이 0 이하인 비정상 데이터는 무시
+
                         if (price <= 0) return;
 
                         String symbol = ticker.getContent().getSymbol().split("_")[0];
@@ -75,7 +74,6 @@ public class BithumbWebSocketService {
                         }
                     }
                 } catch (Exception e) {
-                    // 파싱 에러 등은 로그를 남기지 않거나 디버그용으로만 사용 (메시지가 너무 많음)
                 }
             }
 
