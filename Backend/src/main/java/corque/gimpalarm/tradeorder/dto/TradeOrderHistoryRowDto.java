@@ -13,6 +13,8 @@ public class TradeOrderHistoryRowDto {
     private String id;
     private String botKey;
     private String symbol;
+    private String entryAt;
+    private String exitAt;
     private String phase;
     private String exchange;
     private String quantity;

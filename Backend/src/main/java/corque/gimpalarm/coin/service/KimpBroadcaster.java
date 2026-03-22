@@ -112,6 +112,8 @@ public class KimpBroadcaster {
                 .standardRatio(dto.getStandardRatio())
                 .entryRatio(dto.getEntryRatio())
                 .exitRatio(dto.getExitRatio())
+                .fundingRate(dto.getFundingRate())
+                .tradeVolume(dto.getTradeVolume())
                 .build();
         messagingTemplate.convertAndSend("/topic/kimp/" + pairKey, List.of(realtimeDto));
         messagingTemplate.convertAndSend(buildSymbolTopic(pairKey, dto.getSymbol()), realtimeDto);

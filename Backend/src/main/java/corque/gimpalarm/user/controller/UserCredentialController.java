@@ -1,6 +1,7 @@
 package corque.gimpalarm.user.controller;
 
 import corque.gimpalarm.coin.dto.PriceManager;
+import corque.gimpalarm.tradeorder.dto.TradeOrderHistoryPageDto;
 import corque.gimpalarm.tradeorder.dto.TradeOrderHistoryRowDto;
 import corque.gimpalarm.tradeorder.service.TradeOrderHistoryService;
 import corque.gimpalarm.user.domain.UserPrincipal;
@@ -86,11 +87,14 @@ public class UserCredentialController {
     }
 
     @GetMapping("/orders")
-    public ResponseEntity<List<TradeOrderHistoryRowDto>> getOrders(@AuthenticationPrincipal UserPrincipal userPrincipal) {
+    public ResponseEntity<TradeOrderHistoryPageDto> getOrders(
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
         if (userPrincipal == null) {
             return ResponseEntity.status(401).build();
         }
 
-        return ResponseEntity.ok(tradeOrderHistoryService.getRecentOrders(userPrincipal.getId()));
+        return ResponseEntity.ok(tradeOrderHistoryService.getRecentOrders(userPrincipal.getId(), page, size));
     }
 }
