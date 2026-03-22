@@ -96,7 +96,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           ? "BINANCE_FUTURES"
           : "BYBIT_FUTURES";
       const response = await axios.get(
-        `/api/kimp/history?symbol=${symbol}&range=${range}&domesticExchange=AVERAGE&foreignExchange=${foreignEx}`,
+        `/api/kimp/history?symbol=${symbol}&range=${range}&domesticExchange=${selectedDomesticExchange}&foreignExchange=${foreignEx}`,
       );
       const formattedData = response.data.map((item: any, index: number) => {
         const rawTime =
@@ -563,6 +563,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                                     name="현재 김프"
                                     stroke="#38bdf8"
                                     strokeWidth={2}
+                                    isAnimationActive={false}
                                     dot={false}
                                     activeDot={{ r: 4 }}
                                   />
@@ -572,6 +573,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                                     name="진입 김프"
                                     stroke="#10b981"
                                     strokeWidth={2}
+                                    isAnimationActive={false}
                                     dot={false}
                                   />
                                   <Line
@@ -580,6 +582,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                                     name="청산 김프"
                                     stroke="#f59e0b"
                                     strokeWidth={2}
+                                    isAnimationActive={false}
                                     dot={false}
                                   />
                                 </LineChart>

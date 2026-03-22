@@ -28,7 +28,6 @@ public class UpbitWebSocketService {
     private final String UPBIT_WSS_URL = "wss://api.upbit.com/websocket/v1";
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final PriceManager priceManager;
-    private final CoinBatchService coinBatchService;
     private final BinanceFuturesWebSocketService binanceFuturesWebSocketService;
     private final UsdKrwCacheService usdKrwCacheService;
     private final SupportedCoinRepository coinRepository;

@@ -21,17 +21,11 @@ public class CoinPriceService {
         this.config = config;
     }
 
-    /**
-     * 김치 프리미엄 데이터를 InfluxDB에 저장합니다.
-     */
     public void saveKimchPremiums(List<KimchPremium> kimpList) {
         WriteApiBlocking writeApi = influxDBClient.getWriteApiBlocking();
         writeApi.writeMeasurements(config.getBucket(), config.getOrg(), WritePrecision.MS, kimpList);
     }
 
-    /**
-     * InfluxDB에 김프 데이터가 이미 존재하는지 확인합니다.
-     */
     public boolean hasHistoricalData() {
         String query = String.format(
             "from(bucket: \"%s\") |> range(start: -1y) |> filter(fn: (r) => r[\"_measurement\"] == \"kimp\") |> limit(n: 1)",
@@ -41,9 +35,6 @@ public class CoinPriceService {
         return !result.isEmpty();
     }
 
-    /**
-     * 특정 코인의 최근 김프 히스토리를 조회합니다.
-     */
     public List<KimchPremium> getKimpHistory(String symbol, String range, String domesticEx, String foreignEx) {
         String windowPeriod;
         if (range.equals("-6h")) windowPeriod = "5m";

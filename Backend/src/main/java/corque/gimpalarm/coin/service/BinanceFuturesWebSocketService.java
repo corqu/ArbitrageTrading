@@ -68,9 +68,6 @@ public class BinanceFuturesWebSocketService {
                     if (ticker != null && ticker.getSymbol() != null) {
                         String coinName = ticker.getSymbol().replace("USDT", "").toUpperCase();
                         
-                        // 디버그 로그: 어떤 코인이 들어오고 있는지 확인 (너무 많으면 주석 처리 예정)
-                        // log.debug("바이낸스 수신: {}", coinName);
-                        
                         double markPrice = Double.parseDouble(ticker.getMarkPrice());
                         double fundingRate = Double.parseDouble(ticker.getFundingRate());
                         

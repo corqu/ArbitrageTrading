@@ -16,13 +16,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -75,8 +72,10 @@ public class KimpBroadcaster {
         Map<String, List<KimpResponseDto>> pairs = getSnapshotLists();
         List<KimchPremium> kimpToSave = new ArrayList<>();
 
-        kimpToSave.addAll(calculateAverageForForeign(pairs.get("ub-bn"), pairs.get("bt-bn"), "BINANCE_FUTURES"));
-        kimpToSave.addAll(calculateAverageForForeign(pairs.get("ub-bb"), pairs.get("bt-bb"), "BYBIT_FUTURES"));
+        kimpToSave.addAll(buildPairHistory(pairs.get("ub-bn"), "UPBIT", "BINANCE_FUTURES"));
+        kimpToSave.addAll(buildPairHistory(pairs.get("ub-bb"), "UPBIT", "BYBIT_FUTURES"));
+        kimpToSave.addAll(buildPairHistory(pairs.get("bt-bn"), "BITHUMB", "BINANCE_FUTURES"));
+        kimpToSave.addAll(buildPairHistory(pairs.get("bt-bb"), "BITHUMB", "BYBIT_FUTURES"));
 
         if (!kimpToSave.isEmpty()) {
             coinPriceService.saveKimchPremiums(kimpToSave);
@@ -150,79 +149,31 @@ public class KimpBroadcaster {
         return "KRW-USDT".equalsIgnoreCase(key);
     }
 
-    private List<KimchPremium> calculateAverageForForeign(List<KimpResponseDto> ubList, List<KimpResponseDto> btList, String foreignEx) {
-        Map<String, KimpResponseDto> ubMap = (ubList != null)
-                ? ubList.stream().collect(Collectors.toMap(KimpResponseDto::getSymbol, dto -> dto, (left, right) -> left))
-                : Collections.emptyMap();
-        Map<String, KimpResponseDto> btMap = (btList != null)
-                ? btList.stream().collect(Collectors.toMap(KimpResponseDto::getSymbol, dto -> dto, (left, right) -> left))
-                : Collections.emptyMap();
+    private List<KimchPremium> buildPairHistory(List<KimpResponseDto> source, String domesticExchange, String foreignExchange) {
+        if (source == null || source.isEmpty()) {
+            return Collections.emptyList();
+        }
 
-        Set<String> allSymbols = new HashSet<>(ubMap.keySet());
-        allSymbols.addAll(btMap.keySet());
-
-        return allSymbols.stream()
-                .map(symbol -> buildAverageKimp(symbol, ubMap.get(symbol), btMap.get(symbol), foreignEx))
+        return source.stream()
+                .map(dto -> buildKimchPremium(dto, domesticExchange, foreignExchange))
                 .filter(Objects::nonNull)
                 .toList();
     }
 
-    private Double averageRatio(Double first, Double second, double fallback) {
-        if (first != null && second != null) {
-            return (first + second) / 2.0;
-        }
-        if (first != null) {
-            return first;
-        }
-        if (second != null) {
-            return second;
-        }
-        return fallback;
-    }
-
-    private KimchPremium buildAverageKimp(String symbol, KimpResponseDto ub, KimpResponseDto bt, String foreignEx) {
-        Double avgStandardRatio;
-        Double avgEntryRatio;
-        Double avgExitRatio;
-        Double fundingRate;
-        Double tradeVolume;
-
-        if (ub != null && bt != null) {
-            avgStandardRatio = averageRatio(ub.getStandardRatio(), bt.getStandardRatio(), 0.0);
-            avgEntryRatio = averageRatio(ub.getEntryRatio(), bt.getEntryRatio(), avgStandardRatio);
-            avgExitRatio = averageRatio(ub.getExitRatio(), bt.getExitRatio(), avgStandardRatio);
-            fundingRate = ub.getFundingRate();
-            tradeVolume = (ub.getTradeVolume() != null ? ub.getTradeVolume() : 0.0)
-                    + (bt.getTradeVolume() != null ? bt.getTradeVolume() : 0.0);
-        } else if (ub != null) {
-            avgStandardRatio = ub.getStandardRatio();
-            avgEntryRatio = averageRatio(ub.getEntryRatio(), null, avgStandardRatio != null ? avgStandardRatio : 0.0);
-            avgExitRatio = averageRatio(ub.getExitRatio(), null, avgStandardRatio != null ? avgStandardRatio : 0.0);
-            fundingRate = ub.getFundingRate();
-            tradeVolume = ub.getTradeVolume();
-        } else if (bt != null) {
-            avgStandardRatio = bt.getStandardRatio();
-            avgEntryRatio = averageRatio(bt.getEntryRatio(), null, avgStandardRatio != null ? avgStandardRatio : 0.0);
-            avgExitRatio = averageRatio(bt.getExitRatio(), null, avgStandardRatio != null ? avgStandardRatio : 0.0);
-            fundingRate = bt.getFundingRate();
-            tradeVolume = bt.getTradeVolume();
-        } else {
-            return null;
-        }
-
-        if (avgStandardRatio == null) {
+    private KimchPremium buildKimchPremium(KimpResponseDto dto, String domesticExchange, String foreignExchange) {
+        if (dto == null || dto.getStandardRatio() == null) {
             return null;
         }
 
         return KimchPremium.builder()
-                .symbol(symbol)
-                .domesticExchange("AVERAGE")
-                .foreignExchange(foreignEx)
-                .standardRatio(avgStandardRatio)
-                .entryRatio(avgEntryRatio)
-                .exitRatio(avgExitRatio)
-                .fundingRate(fundingRate)
-                .tradeVolume(tradeVolume)
+                .symbol(dto.getSymbol())
+                .domesticExchange(domesticExchange)
+                .foreignExchange(foreignExchange)
+                .standardRatio(dto.getStandardRatio())
+                .entryRatio(dto.getEntryRatio() != null ? dto.getEntryRatio() : dto.getStandardRatio())
+                .exitRatio(dto.getExitRatio() != null ? dto.getExitRatio() : dto.getStandardRatio())
+                .fundingRate(dto.getFundingRate())
+                .tradeVolume(dto.getTradeVolume())
                 .build();
     }
 }

@@ -75,7 +75,7 @@ class TradingBotServiceTest {
     }
 
     @Test
-    @DisplayName("嫄곕옒??紐낆묶???대? ?쒖뒪?쒖뿉 留욊쾶 蹂寃쏀븯?붿? ?뺤씤")
+    @DisplayName("거래소 명칭이 내부 시스템에 맞게 변경되는지 확인")
     void resolvePairKeyMapsUpbitBinanceFuturesToKimpKey() {
         TradingRequest request = new TradingRequest();
         request.setDomesticExchange("UPBIT");
@@ -85,7 +85,7 @@ class TradingBotServiceTest {
     }
 
     @Test
-    @DisplayName("?좎?媛 ?놁쓣 ???먮윭瑜????섏??붿? ?뺤씤")
+    @DisplayName("사용자가 없을 때 에러를 발생하는지 확인")
     void executeTradeForUserThrowsWhenUserMissing() {
         TradingRequest request = baseRequest();
         when(userRepository.findById(1L)).thenReturn(Optional.empty());
@@ -94,7 +94,7 @@ class TradingBotServiceTest {
     }
 
     @Test
-    @DisplayName("遊?援щ룆?댁젣??遊뉗씠 ??硫덉텛怨???젣?섎뒗吏 ?뺤씤")
+    @DisplayName("봇 구독해제시 봇이 잘 멈추고 제거되는지 확인")
     void executeTradeForUserStopRemovesBotAndSyncsStopped() {
         User user = User.builder().id(1L).email("a@test.com").build();
         TradingRequest request = baseRequest();
@@ -109,7 +109,7 @@ class TradingBotServiceTest {
     }
 
     @Test
-    @DisplayName("?ㅼ젙 媛寃⑹뿉 ?꾨떖?덉쓣 ??二쇰Ц?????ㅼ뼱媛?붿? ?뺤씤")
+    @DisplayName("설정 가격에 도달했을 때 주문이 잘 들어가는지 확인")
     void onPriceChangedEntersTradeWhenEntryConditionMatches() {
         User user = User.builder().id(1L).email("a@test.com").build();
         TradingRequest request = baseRequest();
@@ -191,7 +191,7 @@ class TradingBotServiceTest {
     }
 
     @Test
-    @DisplayName("二쇰Ц ?ㅽ뙣 ???ъ????뺣━ ??遊뉗씠 ?湲곗긽?쒕줈 ?뚯븘媛?붿? ?뺤씤")
+    @DisplayName("주문 실패 시 포지션 정리 후 봇이 대기상태로 돌아가는지 확인")
     void processOngoingTradesReturnsToWaitingWhenFailsafeCloseSucceeds() {
         User user = User.builder().id(1L).email("a@test.com").build();
         TradingRequest request = baseRequest();

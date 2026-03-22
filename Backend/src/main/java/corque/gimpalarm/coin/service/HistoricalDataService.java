@@ -65,9 +65,10 @@ public class HistoricalDataService {
                 Map<Long, Double> bnFunding = coin.isBinance() ? fetchBinanceFundingHistory(symbol) : new HashMap<>();
                 Map<Long, Double> bbFunding = coin.isBybit() ? fetchBybitFundingHistory(symbol) : new HashMap<>();
 
-                // 국내 평균가 기준으로 해외 거래소별 과거 김프를 저장한다.
-                processAndSaveAveragedHistory(symbol, upbitPrices, bithumbPrices, binancePrices, bnFunding, exchangeRates, "BINANCE_FUTURES");
-                processAndSaveAveragedHistory(symbol, upbitPrices, bithumbPrices, bybitPrices, bbFunding, exchangeRates, "BYBIT_FUTURES");
+                processAndSaveExchangeHistory(symbol, "UPBIT", upbitPrices, binancePrices, bnFunding, exchangeRates, "BINANCE_FUTURES");
+                processAndSaveExchangeHistory(symbol, "BITHUMB", bithumbPrices, binancePrices, bnFunding, exchangeRates, "BINANCE_FUTURES");
+                processAndSaveExchangeHistory(symbol, "UPBIT", upbitPrices, bybitPrices, bbFunding, exchangeRates, "BYBIT_FUTURES");
+                processAndSaveExchangeHistory(symbol, "BITHUMB", bithumbPrices, bybitPrices, bbFunding, exchangeRates, "BYBIT_FUTURES");
 
                 Thread.sleep(500); // 외부 거래소 rate limit 완화
             } catch (Exception e) {
@@ -78,48 +79,40 @@ public class HistoricalDataService {
         log.info("6개월치 과거 시세 수집이 완료되었습니다.");
     }
 
-    private void processAndSaveAveragedHistory(String symbol, Map<Long, Double> upbit, Map<Long, Double> bithumb,
+    private void processAndSaveExchangeHistory(String symbol, String domesticExchange, Map<Long, Double> domesticPrices,
                                                Map<Long, Double> foreign, Map<Long, Double> funding,
                                                Map<Long, Double> rates, String foreignEx) {
 
         List<KimchPremium> history = new ArrayList<>();
-        Set<Long> timestamps = new HashSet<>(upbit.keySet());
-        timestamps.addAll(bithumb.keySet());
+        Set<Long> timestamps = new HashSet<>(domesticPrices.keySet());
 
         for (Long ts : timestamps) {
-            Double upPrice = upbit.get(ts);
-            Double btPrice = bithumb.get(ts);
+            Double domesticPrice = domesticPrices.get(ts);
             Double forPrice = foreign.get(ts);
             Double rate = rates.get(ts);
 
-            if (forPrice != null && rate != null) {
-                double domesticAvg;
-                if (upPrice != null && btPrice != null) domesticAvg = (upPrice + btPrice) / 2.0;
-                else if (upPrice != null) domesticAvg = upPrice;
-                else if (btPrice != null) domesticAvg = btPrice;
-                else continue;
+            if (domesticPrice == null || forPrice == null || rate == null) continue;
 
-                double ratio = ((domesticAvg / (forPrice * rate)) - 1) * 100;
-                Double fRate = findClosestFundingRate(funding, ts);
+            double ratio = ((domesticPrice / (forPrice * rate)) - 1) * 100;
+            Double fRate = findClosestFundingRate(funding, ts);
 
-                KimchPremium kimp = KimchPremium.builder()
-                        .symbol(symbol)
-                        .domesticExchange("AVERAGE")
-                        .foreignExchange(foreignEx)
-                        .standardRatio(ratio)
-                        .entryRatio(ratio)
-                        .exitRatio(ratio)
-                        .fundingRate(fRate)
-                        .tradeVolume(0.0)
-                        .build();
-                kimp.setTime(Instant.ofEpochMilli(ts));
-                history.add(kimp);
-            }
+            KimchPremium kimp = KimchPremium.builder()
+                    .symbol(symbol)
+                    .domesticExchange(domesticExchange)
+                    .foreignExchange(foreignEx)
+                    .standardRatio(ratio)
+                    .entryRatio(ratio)
+                    .exitRatio(ratio)
+                    .fundingRate(fRate)
+                    .tradeVolume(0.0)
+                    .build();
+            kimp.setTime(Instant.ofEpochMilli(ts));
+            history.add(kimp);
         }
 
         if (!history.isEmpty()) {
             coinPriceService.saveKimchPremiums(history);
-            log.info("{} - {} 과거 데이터 {}건 저장", symbol, foreignEx, history.size());
+            log.info("{} - {} - {} 과거 데이터 {}건 저장", symbol, domesticExchange, foreignEx, history.size());
         }
     }
 
