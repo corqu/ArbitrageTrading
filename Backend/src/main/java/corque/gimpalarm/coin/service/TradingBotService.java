@@ -37,6 +37,7 @@ public class TradingBotService {
 
     private static final String ENTRY_DOMESTIC = "ENTRY_DOMESTIC";
     private static final String ENTRY_FOREIGN = "ENTRY_FOREIGN";
+    private static final double DEFAULT_STOP_LOSS_BUFFER_PERCENT = 80.0;
 
     private final KimpService kimpService;
     private final UserRepository userRepository;
@@ -397,24 +398,29 @@ public class TradingBotService {
     private void calculateAndSetSlTp(ActiveTrade trade, double entryPrice) {
         int lev = trade.getRequest().getLeverage();
         String botKey = generateBotKey(trade.getUserId(), trade.getRequest());
-        if (trade.getRequest().getStopLossPercent() != null) {
-            trade.setSlPrice(entryPrice * (1 + (trade.getRequest().getStopLossPercent() / 100.0 / lev)));
-            Map<String, Object> slRes = exchangeApiService.orderBinanceFuturesConditional(
-                    trade.getUserId(), trade.getRequest().getSymbol(), "BUY", "SHORT", trade.getHedgedQty(), trade.getSlPrice(), "STOP_MARKET");
-            tradeOrderService.recordOrder(
-                    trade.getUserId(), botKey, "BINANCE", "FUTURES", "STOP_LOSS",
-                    trade.getRequest().getSymbol(), "BUY", "SHORT", "STOP_MARKET", trade.getHedgedQty(), trade.getSlPrice(), slRes
-            );
+        double stopLossPercent = resolveStopLossPercent(trade);
+
+        trade.setSlPrice(entryPrice * (1 + (stopLossPercent / 100.0 / lev)));
+        trade.setTpPrice(null);
+        trade.getRequest().setStopLossPercent(stopLossPercent);
+        trade.getRequest().setTakeProfitPercent(null);
+
+        Map<String, Object> slRes = exchangeApiService.orderBinanceFuturesConditional(
+                trade.getUserId(), trade.getRequest().getSymbol(), "BUY", "SHORT", trade.getHedgedQty(), trade.getSlPrice(), "STOP_MARKET");
+        tradeOrderService.recordOrder(
+                trade.getUserId(), botKey, "BINANCE", "FUTURES", "STOP_LOSS",
+                trade.getRequest().getSymbol(), "BUY", "SHORT", "STOP_MARKET", trade.getHedgedQty(), trade.getSlPrice(), slRes
+        );
+        log.info(">>> [SL-PLACED] botKey={}, symbol={}, hedgedQty={}, stopLossPercent={}, slPrice={}",
+                botKey, trade.getRequest().getSymbol(), trade.getHedgedQty(), stopLossPercent, trade.getSlPrice());
+    }
+
+    private double resolveStopLossPercent(ActiveTrade trade) {
+        Double configured = trade.getRequest().getStopLossPercent();
+        if (configured != null && configured > 0) {
+            return configured;
         }
-        if (trade.getRequest().getTakeProfitPercent() != null) {
-            trade.setTpPrice(entryPrice * (1 - (trade.getRequest().getTakeProfitPercent() / 100.0 / lev)));
-            Map<String, Object> tpRes = exchangeApiService.orderBinanceFuturesConditional(
-                    trade.getUserId(), trade.getRequest().getSymbol(), "BUY", "SHORT", trade.getHedgedQty(), trade.getTpPrice(), "TAKE_PROFIT_MARKET");
-            tradeOrderService.recordOrder(
-                    trade.getUserId(), botKey, "BINANCE", "FUTURES", "TAKE_PROFIT",
-                    trade.getRequest().getSymbol(), "BUY", "SHORT", "TAKE_PROFIT_MARKET", trade.getHedgedQty(), trade.getTpPrice(), tpRes
-            );
-        }
+        return DEFAULT_STOP_LOSS_BUFFER_PERCENT;
     }
 
     private boolean resolveUnbalancedFill(String botKey, ActiveTrade trade, String domesticEx, String symbol,

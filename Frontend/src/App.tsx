@@ -141,10 +141,10 @@ const App: React.FC = () => {
                   standardRatio: item.standardRatio ?? null,
                   entryRatio: item.entryRatio ?? item.standardRatio ?? null,
                   exitRatio: item.exitRatio ?? item.standardRatio ?? null,
-                  fundingRate: null,
-                  adjustedApr: null,
-                  liquidationPrice: null,
-                  tradeVolume: null,
+                  fundingRate: item.fundingRate ?? null,
+                  adjustedApr: item.adjustedApr ?? null,
+                  liquidationPrice: item.liquidationPrice ?? null,
+                  tradeVolume: item.tradeVolume ?? null,
                 }));
                 const next = [...prev];
 

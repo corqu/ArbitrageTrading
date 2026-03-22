@@ -82,9 +82,11 @@ const MyPage: React.FC<MyPageProps> = ({
       id: string;
       botKey: string;
       symbol: string;
-      phase: string;
-      exchange: string;
-      quantity: string;
+        entryAt: string;
+        exitAt: string;
+        phase: string;
+        exchange: string;
+        quantity: string;
       requestedQty: string;
       executedQty: string;
       remainingQty: string;
@@ -93,6 +95,10 @@ const MyPage: React.FC<MyPageProps> = ({
       status: string;
     }[]
   >([]);
+  const [tradeOrdersPage, setTradeOrdersPage] = useState(0);
+  const [tradeOrdersTotalPages, setTradeOrdersTotalPages] = useState(0);
+  const [hasNextTradeOrdersPage, setHasNextTradeOrdersPage] = useState(false);
+  const [hasPreviousTradeOrdersPage, setHasPreviousTradeOrdersPage] = useState(false);
   const [subscribedBots, setSubscribedBots] = useState<SubscribedBot[]>([]);
   const [isUpdatingBot, setIsUpdatingBot] = useState<string | null>(null);
   
@@ -216,10 +222,16 @@ const MyPage: React.FC<MyPageProps> = ({
     }
   };
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (page = 0) => {
     try {
-      const res = await axios.get("/api/user/credentials/orders");
-      setTradeOrders(res.data);
+      const res = await axios.get("/api/user/credentials/orders", {
+        params: { page, size: 10 },
+      });
+      setTradeOrders(res.data.content ?? []);
+      setTradeOrdersPage(res.data.page ?? 0);
+      setTradeOrdersTotalPages(res.data.totalPages ?? 0);
+      setHasNextTradeOrdersPage(res.data.hasNext ?? false);
+      setHasPreviousTradeOrdersPage(res.data.hasPrevious ?? false);
     } catch (e) {}
   };
 
@@ -278,7 +290,7 @@ const MyPage: React.FC<MyPageProps> = ({
   }, [foreignExchange, connectedExchanges]);
 
   useEffect(() => {
-    fetchOrders();
+    fetchOrders(0);
     fetchSubscribedBots();
   }, [connectedExchanges]);
 
@@ -1140,6 +1152,51 @@ const MyPage: React.FC<MyPageProps> = ({
             )}
           </div>
         </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginTop: "1rem",
+            gap: "1rem",
+          }}
+        >
+          <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+            {tradeOrdersTotalPages > 0
+              ? `${tradeOrdersPage + 1} / ${tradeOrdersTotalPages} 페이지`
+              : "0 / 0 페이지"}
+          </div>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button
+              onClick={() => fetchOrders(tradeOrdersPage - 1)}
+              disabled={!hasPreviousTradeOrdersPage}
+              style={{
+                padding: "0.45rem 0.9rem",
+                borderRadius: "0.4rem",
+                border: "1px solid var(--border-color)",
+                background: hasPreviousTradeOrdersPage ? "transparent" : "rgba(255,255,255,0.04)",
+                color: hasPreviousTradeOrdersPage ? "white" : "var(--text-secondary)",
+                cursor: hasPreviousTradeOrdersPage ? "pointer" : "default",
+              }}
+            >
+              이전
+            </button>
+            <button
+              onClick={() => fetchOrders(tradeOrdersPage + 1)}
+              disabled={!hasNextTradeOrdersPage}
+              style={{
+                padding: "0.45rem 0.9rem",
+                borderRadius: "0.4rem",
+                border: "1px solid var(--border-color)",
+                background: hasNextTradeOrdersPage ? "transparent" : "rgba(255,255,255,0.04)",
+                color: hasNextTradeOrdersPage ? "white" : "var(--text-secondary)",
+                cursor: hasNextTradeOrdersPage ? "pointer" : "default",
+              }}
+            >
+              다음
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="card assets-orders-container" style={{ padding: "2rem" }}>
@@ -1239,7 +1296,7 @@ const MyPage: React.FC<MyPageProps> = ({
                 key={order.id}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1.4fr 0.8fr 1.2fr 1fr 1fr",
+                  gridTemplateColumns: "1.8fr 0.8fr 1fr 1fr 1fr",
                   background: "rgba(0,0,0,0.15)",
                   border: "1px solid var(--border-color)",
                   borderRadius: "0.6rem",
@@ -1250,6 +1307,12 @@ const MyPage: React.FC<MyPageProps> = ({
                   <div style={{ fontWeight: 700 }}>{order.symbol}</div>
                   <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
                     {order.exchange}
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.3rem" }}>
+                    진입: {order.entryAt}
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+                    종료: {order.exitAt}
                   </div>
                 </div>
                 <div style={{ padding: "0.8rem", borderLeft: "1px solid var(--border-color)" }}>
