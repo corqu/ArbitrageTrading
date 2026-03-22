@@ -3,3 +3,4 @@
 
 ### db
 mysql/data/
+influxdb/**
