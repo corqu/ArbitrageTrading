@@ -10,9 +10,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 @Slf4j
@@ -31,53 +34,54 @@ public class HistoricalDataService {
     private final String BYBIT_FUNDING_URL = "https://api.bybit.com/v5/market/funding/history?category=linear&symbol=%sUSDT&limit=100";
 
     /**
-     * ??쑬猷욄묾怨뺤쨮 6揶쏆뮇?←㎉??⑥눊援??怨쀬뵠?怨? ??륁춿??몃빍??
-     * ??? ?怨쀬뵠?怨? 鈺곕똻???롢늺 ??쎈뻬??? ??녿뮸??덈뼄.
+     * 6개월치 시세 데이터를 비동기로 수집해 InfluxDB에 저장한다.
+     * 평균 국내가(업비트/빗썸)와 해외 선물 가격을 기준으로 과거 김프를 계산한다.
      */
     @Async
     public void importSixMonthsHistory() {
-        // ?怨쀬뵠??鈺곕똻????? ?????類ㅼ뵥 (BTC ?怨쀬뵠?怨? 筌ㅼ뮄??1??볦퍢 ??沅????덈뮉筌왖 ??- ??由???????귐딅뮞??鈺곕똻?????嚥???筌?揶쎛?館釉??
-        // ?ヂ ???類μ넇??띿쓺??InfluxDB ?묒눖???袁⑹뒄. ??곕뼊 嚥≪뮄?뉑에?餓λ쵎????륁춿 雅뚯눘?????뵝)
-        log.info("?⑥눊援??怨쀬뵠????륁춿 ?袁⑥쨮?紐꾨뮞 揶쎛??..");
+        log.info("6개월치 과거 시세 수집을 시작합니다.");
 
         List<SupportedCoin> coins = coinRepository.findAll();
-        if (coins.isEmpty()) return;
+        if (coins.isEmpty()) {
+            return;
+        }
 
-        // 1. ?⑥눊援???륁몛 ?怨쀬뵠????륁춿 (??낇돩??KRW-USDT 1??볦퍢??疫꿸퀣?)
+        // 환율 기준은 Upbit KRW-USDT 1시간 봉을 사용한다.
         Map<Long, Double> exchangeRates = fetchUpbitHistory("KRW-USDT", 180);
-        
+
         for (SupportedCoin coin : coins) {
             try {
                 String symbol = coin.getSymbol();
-                
-                // 2. ??沅?椰꾧퀡????怨쀬뵠????륁춿 (??낇돩?? ??щ쑞)
+
+                // 국내 현물 시세
                 Map<Long, Double> upbitPrices = coin.isUpbit() ? fetchUpbitHistory("KRW-" + symbol, 180) : new HashMap<>();
                 Map<Long, Double> bithumbPrices = coin.isBithumb() ? fetchBithumbHistory(symbol) : new HashMap<>();
 
-                // 3. ??곸뇚 椰꾧퀡????怨쀬뵠????륁춿 (獄쏅뗄??紐꾨뮞, 獄쏅뗄?좈뜮袁る뱜)
+                // 해외 선물 시세
                 Map<Long, Double> binancePrices = coin.isBinance() ? fetchBinanceHistory(symbol, 180) : new HashMap<>();
                 Map<Long, Double> bybitPrices = coin.isBybit() ? fetchBybitHistory(symbol, 180) : new HashMap<>();
 
-                // 4. ????명돩 ?怨쀬뵠????륁춿
+                // 펀딩비 이력
                 Map<Long, Double> bnFunding = coin.isBinance() ? fetchBinanceFundingHistory(symbol) : new HashMap<>();
                 Map<Long, Double> bbFunding = coin.isBybit() ? fetchBybitFundingHistory(symbol) : new HashMap<>();
 
-                // 5. 繹먃???④쑴沅?獄?????(??沅????뇧 vs 獄쏅뗄??紐꾨뮞, ??沅????뇧 vs 獄쏅뗄?좈뜮袁る뱜)
+                // 국내 평균가 기준으로 해외 거래소별 과거 김프를 저장한다.
                 processAndSaveAveragedHistory(symbol, upbitPrices, bithumbPrices, binancePrices, bnFunding, exchangeRates, "BINANCE_FUTURES");
                 processAndSaveAveragedHistory(symbol, upbitPrices, bithumbPrices, bybitPrices, bbFunding, exchangeRates, "BYBIT_FUTURES");
 
-                Thread.sleep(500); // Rate limit 獄쎻뫗?
+                Thread.sleep(500); // 외부 거래소 rate limit 완화
             } catch (Exception e) {
-                log.error("{} ?⑥눊援???륁춿 ??쎈솭: {}", coin.getSymbol(), e.getMessage());
+                log.error("{} 과거 데이터 수집 실패: {}", coin.getSymbol(), e.getMessage());
             }
         }
-        log.info("筌뤴뫀諭??⑥눊援??怨쀬뵠????륁춿 ?袁⑥┷");
+
+        log.info("6개월치 과거 시세 수집이 완료되었습니다.");
     }
 
-    private void processAndSaveAveragedHistory(String symbol, Map<Long, Double> upbit, Map<Long, Double> bithumb, 
-                                             Map<Long, Double> foreign, Map<Long, Double> funding, 
-                                             Map<Long, Double> rates, String foreignEx) {
-        
+    private void processAndSaveAveragedHistory(String symbol, Map<Long, Double> upbit, Map<Long, Double> bithumb,
+                                               Map<Long, Double> foreign, Map<Long, Double> funding,
+                                               Map<Long, Double> rates, String foreignEx) {
+
         List<KimchPremium> history = new ArrayList<>();
         Set<Long> timestamps = new HashSet<>(upbit.keySet());
         timestamps.addAll(bithumb.keySet());
@@ -115,7 +119,7 @@ public class HistoricalDataService {
 
         if (!history.isEmpty()) {
             coinPriceService.saveKimchPremiums(history);
-            log.info("{} - {} historical records saved: {}", symbol, foreignEx, history.size());
+            log.info("{} - {} 과거 데이터 {}건 저장", symbol, foreignEx, history.size());
         }
     }
 
@@ -128,11 +132,13 @@ public class HistoricalDataService {
                 List<List<Object>> list = (List<List<Object>>) res.get("data");
                 for (List<Object> candle : list) {
                     long ts = Long.parseLong(candle.get(0).toString());
-                    double price = Double.parseDouble(candle.get(2).toString()); // ?ル굛?
+                    double price = Double.parseDouble(candle.get(2).toString());
                     data.put(ts, price);
                 }
             }
-        } catch (Exception e) { log.warn("??щ쑞 {} ??됰뮞?醫듼봺 ?袁⑥뵭", symbol); }
+        } catch (Exception e) {
+            log.warn("빗썸 {} 시세 조회 실패", symbol);
+        }
         return data;
     }
 
@@ -151,7 +157,9 @@ public class HistoricalDataService {
                     data.put(ts, price);
                 }
             }
-        } catch (Exception e) { log.warn("獄쏅뗄?좈뜮袁る뱜 {} ??됰뮞?醫듼봺 ?袁⑥뵭", symbol); }
+        } catch (Exception e) {
+            log.warn("바이비트 {} 시세 조회 실패", symbol);
+        }
         return data;
     }
 
@@ -169,7 +177,9 @@ public class HistoricalDataService {
                     data.put(ts, rate);
                 }
             }
-        } catch (Exception e) { log.warn("獄쏅뗄?좈뜮袁る뱜 {} ????명돩 ?袁⑥뵭", symbol); }
+        } catch (Exception e) {
+            log.warn("바이비트 {} 펀딩비 조회 실패", symbol);
+        }
         return data;
     }
 
@@ -189,7 +199,10 @@ public class HistoricalDataService {
                 data.put(ts, price);
                 to = Instant.ofEpochMilli(ts);
             }
-            try { Thread.sleep(150); } catch (InterruptedException e) {}
+            try {
+                Thread.sleep(150);
+            } catch (InterruptedException ignored) {
+            }
         }
         return data;
     }
@@ -231,7 +244,10 @@ public class HistoricalDataService {
         long minDiff = Long.MAX_VALUE;
         for (Long ts : fundingRates.keySet()) {
             long diff = Math.abs(ts - targetTs);
-            if (diff < minDiff) { minDiff = diff; closestTs = ts; }
+            if (diff < minDiff) {
+                minDiff = diff;
+                closestTs = ts;
+            }
         }
         return (minDiff < 4 * 60 * 60 * 1000) ? fundingRates.get(closestTs) : 0.0;
     }
