@@ -16,33 +16,42 @@ import java.time.Instant;
 public class KimchPremium {
 
     @Column(tag = true)
-    private String symbol; // BTC, ETH 등
+    private String symbol;
 
     @Column(tag = true)
-    private String domesticExchange; // UPBIT
+    private String domesticExchange;
 
     @Column(tag = true)
-    private String foreignExchange; // BINANCE_SPOT, BINANCE_FUTURES
+    private String foreignExchange;
 
     @Column
-    private Double ratio; // 계산된 김프 비율 (%)
+    private Double standardRatio;
 
     @Column
-    private Double fundingRate; // 현재 실시간 펀딩비 (선물일 경우에만 존재)
+    private Double entryRatio;
 
     @Column
-    private Double tradeVolume; // 업비트 24시간 누적 거래대금 (KRW)
+    private Double exitRatio;
+
+    @Column
+    private Double fundingRate;
+
+    @Column
+    private Double tradeVolume;
 
     @Column(timestamp = true)
     private Instant time;
 
     @Builder
-    public KimchPremium(String symbol, String domesticExchange, String foreignExchange, 
-                       Double ratio, Double fundingRate, Double tradeVolume) {
+    public KimchPremium(String symbol, String domesticExchange, String foreignExchange,
+                        Double standardRatio, Double entryRatio, Double exitRatio,
+                        Double fundingRate, Double tradeVolume) {
         this.symbol = symbol;
         this.domesticExchange = domesticExchange;
         this.foreignExchange = foreignExchange;
-        this.ratio = ratio;
+        this.standardRatio = standardRatio;
+        this.entryRatio = entryRatio;
+        this.exitRatio = exitRatio;
         this.fundingRate = fundingRate;
         this.tradeVolume = tradeVolume;
         this.time = Instant.now();

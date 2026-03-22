@@ -11,10 +11,11 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  AreaChart,
-  Area,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
+  Legend,
 } from "recharts";
 import type { KimchPremium } from "../types";
 
@@ -31,6 +32,9 @@ interface DashboardProps {
 type SortKey =
   | "symbol"
   | "ratio"
+  | "standardRatio"
+  | "entryRatio"
+  | "exitRatio"
   | "fundingRate"
   | "tradeVolume"
   | "adjustedApr";
@@ -104,7 +108,9 @@ const Dashboard: React.FC<DashboardProps> = ({
           id: `${rawTime ?? "point"}-${index}`,
           time: rawTime ?? null,
           timeLabel: date ? formatChartTimeLabel(date, range) : fallbackLabel,
-          ratio: parseFloat(Number(item.ratio ?? 0).toFixed(2)),
+          standardRatio: parseFloat(Number(item.standardRatio ?? item.ratio ?? 0).toFixed(2)),
+          entryRatio: parseFloat(Number(item.entryRatio ?? item.standardRatio ?? item.ratio ?? 0).toFixed(2)),
+          exitRatio: parseFloat(Number(item.exitRatio ?? item.standardRatio ?? item.ratio ?? 0).toFixed(2)),
         };
       });
       setHistoryData(formattedData);
@@ -116,12 +122,17 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const filteredList = useMemo(() => {
+    const foreignExMatch =
+      selectedForeignExchange === "BINANCE"
+        ? "BINANCE_FUTURES"
+        : "BYBIT_FUTURES";
     return kimpList.filter(
       (item) =>
         item.domesticExchange === selectedDomesticExchange &&
+        item.foreignExchange === foreignExMatch &&
         item.symbol.toLowerCase().includes(searchTerm.toLowerCase()),
     );
-  }, [kimpList, searchTerm, selectedDomesticExchange]);
+  }, [kimpList, searchTerm, selectedDomesticExchange, selectedForeignExchange]);
 
   const sortedKimpList = useMemo(() => {
     return [...filteredList].sort((a, b) => {
@@ -141,16 +152,6 @@ const Dashboard: React.FC<DashboardProps> = ({
         : (valB as number) - (valA as number);
     });
   }, [filteredList, sortKey, sortOrder]);
-
-  const gradientOffset = useMemo(() => {
-    if (historyData.length === 0) return 0;
-    const ratios = historyData.map((i) => i.ratio);
-    const max = Math.max(...ratios),
-      min = Math.min(...ratios);
-    if (max <= 0) return 0;
-    if (min >= 0) return 1;
-    return max / (max - min);
-  }, [historyData]);
 
   const formatVolume = (volume: number | null) => {
     if (!volume) return "-";
@@ -311,7 +312,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           <span className="label">평균 김치 프리미엄</span>
           <span className="value">
             {(
-              filteredList.reduce((acc, curr) => acc + (curr.ratio || 0), 0) /
+              filteredList.reduce((acc, curr) => acc + (curr.standardRatio ?? 0), 0) /
               (filteredList.length || 1)
             ).toFixed(2)}
             %
@@ -342,11 +343,25 @@ const Dashboard: React.FC<DashboardProps> = ({
                   {sortKey === "symbol" && (sortOrder === "asc" ? "↑" : "↓")}
                 </th>
                 <th
-                  onClick={() => toggleSort("ratio")}
+                  onClick={() => toggleSort("standardRatio")}
                   style={{ cursor: "pointer" }}
                 >
-                  김프 (%){" "}
-                  {sortKey === "ratio" && (sortOrder === "asc" ? "↑" : "↓")}
+                  표준김프 (%){" "}
+                  {sortKey === "standardRatio" && (sortOrder === "asc" ? "↑" : "↓")}
+                </th>
+                <th
+                  onClick={() => toggleSort("entryRatio")}
+                  style={{ cursor: "pointer" }}
+                >
+                  매수기준김프 (%){" "}
+                  {sortKey === "entryRatio" && (sortOrder === "asc" ? "↑" : "↓")}
+                </th>
+                <th
+                  onClick={() => toggleSort("exitRatio")}
+                  style={{ cursor: "pointer" }}
+                >
+                  매도기준김프 (%){" "}
+                  {sortKey === "exitRatio" && (sortOrder === "asc" ? "↑" : "↓")}
                 </th>
                 <th
                   onClick={() => toggleSort("fundingRate")}
@@ -391,10 +406,22 @@ const Dashboard: React.FC<DashboardProps> = ({
                       <div className="symbol-cell">{item.symbol}</div>
                     </td>
                     <td
-                      className={item.ratio >= 0 ? "positive" : "negative"}
+                      className={(item.standardRatio ?? 0) >= 0 ? "positive" : "negative"}
                       style={{ fontWeight: 700 }}
                     >
-                      {item.ratio.toFixed(2)}%
+                      {item.standardRatio != null ? item.standardRatio.toFixed(2) : "-"}%
+                    </td>
+                    <td
+                      className={(item.entryRatio ?? 0) >= 0 ? "positive" : "negative"}
+                      style={{ fontWeight: 700 }}
+                    >
+                      {item.entryRatio != null ? item.entryRatio.toFixed(2) : "-"}%
+                    </td>
+                    <td
+                      className={(item.exitRatio ?? 0) >= 0 ? "positive" : "negative"}
+                      style={{ fontWeight: 700 }}
+                    >
+                      {item.exitRatio != null ? item.exitRatio.toFixed(2) : "-"}%
                     </td>
                     <td
                       style={{
@@ -419,7 +446,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                   </tr>
                   {selectedSymbol === item.symbol && (
                     <tr className="expanded-row">
-                      <td colSpan={5}>
+                      <td colSpan={6}>
                         <div className="expanded-content">
                           <div
                             style={{
@@ -493,45 +520,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                               </div>
                             ) : (
                               <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={historyData}>
-                                  <defs>
-                                    <linearGradient
-                                      id="splitColor"
-                                      x1="0"
-                                      y1="0"
-                                      x2="0"
-                                      y2="1"
-                                    >
-                                      <stop
-                                        offset={gradientOffset}
-                                        stopColor="#10b981"
-                                        stopOpacity={0.8}
-                                      />
-                                      <stop
-                                        offset={gradientOffset}
-                                        stopColor="#ef4444"
-                                        stopOpacity={0.8}
-                                      />
-                                    </linearGradient>
-                                    <linearGradient
-                                      id="splitFill"
-                                      x1="0"
-                                      y1="0"
-                                      x2="0"
-                                      y2="1"
-                                    >
-                                      <stop
-                                        offset={gradientOffset}
-                                        stopColor="#10b981"
-                                        stopOpacity={0.3}
-                                      />
-                                      <stop
-                                        offset={gradientOffset}
-                                        stopColor="#ef4444"
-                                        stopOpacity={0.3}
-                                      />
-                                    </linearGradient>
-                                  </defs>
+                                <LineChart data={historyData}>
                                   <CartesianGrid
                                     strokeDasharray="3 3"
                                     stroke="rgba(255,255,255,0.05)"
@@ -551,6 +540,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                                     tickLine={false}
                                     tickFormatter={(v) => `${v.toFixed(2)}%`}
                                   />
+                                  <Legend />
                                   <Tooltip
                                     contentStyle={{
                                       backgroundColor: "var(--card-bg)",
@@ -567,14 +557,32 @@ const Dashboard: React.FC<DashboardProps> = ({
                                       "김프",
                                     ]}
                                   />
-                                  <Area
+                                  <Line
                                     type="monotone"
-                                    dataKey="ratio"
-                                    stroke="url(#splitColor)"
-                                    fill="url(#splitFill)"
+                                    dataKey="standardRatio"
+                                    name="현재 김프"
+                                    stroke="#38bdf8"
                                     strokeWidth={2}
+                                    dot={false}
+                                    activeDot={{ r: 4 }}
                                   />
-                                </AreaChart>
+                                  <Line
+                                    type="monotone"
+                                    dataKey="entryRatio"
+                                    name="진입 김프"
+                                    stroke="#10b981"
+                                    strokeWidth={2}
+                                    dot={false}
+                                  />
+                                  <Line
+                                    type="monotone"
+                                    dataKey="exitRatio"
+                                    name="청산 김프"
+                                    stroke="#f59e0b"
+                                    strokeWidth={2}
+                                    dot={false}
+                                  />
+                                </LineChart>
                               </ResponsiveContainer>
                             )}
                           </div>

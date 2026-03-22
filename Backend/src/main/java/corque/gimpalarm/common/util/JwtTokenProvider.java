@@ -20,14 +20,17 @@ public class JwtTokenProvider {
     private final SecretKey key;
     private final long accessTokenValidity;
     private final long refreshTokenValidity;
+    private final boolean secureCookie;
 
     public JwtTokenProvider(
             @Value("${jwt.token.secret-key}") String secretKey,
             @Value("${jwt.token.access-expire-length}") long accessTokenValidity,
-            @Value("${jwt.token.refresh-expire-length}") long refreshTokenValidity) {
+            @Value("${jwt.token.refresh-expire-length}") long refreshTokenValidity,
+            @Value("${app.security.secure-cookies:false}") boolean secureCookie) {
         this.key = Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8));
         this.accessTokenValidity = accessTokenValidity;
         this.refreshTokenValidity = refreshTokenValidity;
+        this.secureCookie = secureCookie;
     }
 
     public String createAccessToken(String email) {
@@ -78,7 +81,7 @@ public class JwtTokenProvider {
     public ResponseCookie createAccessTokenCookie(String token) {
         return ResponseCookie.from("accessToken", token)
                 .httpOnly(true)
-                .secure(false)
+                .secure(secureCookie)
                 .path("/")
                 .maxAge(accessTokenValidity / 1000)
                 .sameSite("Lax")
@@ -88,7 +91,7 @@ public class JwtTokenProvider {
     public ResponseCookie createRefreshTokenCookie(String token) {
         return ResponseCookie.from("refreshToken", token)
                 .httpOnly(true)
-                .secure(false)
+                .secure(secureCookie)
                 .path("/")
                 .maxAge(refreshTokenValidity / 1000)
                 .sameSite("Lax")
@@ -98,7 +101,7 @@ public class JwtTokenProvider {
     public ResponseCookie createLogoutCookie(String name) {
         return ResponseCookie.from(name, "")
                 .httpOnly(true)
-                .secure(false)
+                .secure(secureCookie)
                 .path("/")
                 .maxAge(0)
                 .sameSite("Lax")

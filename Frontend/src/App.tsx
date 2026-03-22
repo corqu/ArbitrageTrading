@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import axios from "axios";
 import SockJS from "sockjs-client";
 import { Client } from "@stomp/stompjs";
 import { RefreshCw } from "lucide-react";
 
 import Sidebar from "./components/Sidebar";
+import axios, { ensureCsrfToken } from "./lib/api";
 import Dashboard from "./pages/Dashboard";
 import Arbitrage from "./pages/Arbitrage";
 import MyPage from "./pages/MyPage";
@@ -23,9 +23,6 @@ const App: React.FC = () => {
   const [selectedForeignExchange, setSelectedForeignExchange] = useState<
     "BINANCE" | "BYBIT"
   >("BINANCE");
-  const [error, setError] = useState<string | null>(null);
-
-  // 인증 관련 상태
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
@@ -52,15 +49,25 @@ const App: React.FC = () => {
     if (seconds <= 0) return;
     logoutTimerRef.current = window.setTimeout(() => {
       alert("로그인 세션이 만료되어 로그아웃되었습니다.");
-      handleLogout();
+      void handleLogout();
     }, seconds * 1000);
   };
 
-  const handleLogout = () => {
-    setIsLoggedIn(false);
-    setEmail("");
-    setNickname("");
-    // 로그아웃 시 세션 쿠키 삭제 등을 백엔드에서 처리하거나 클라이언트에서 정리
+  const handleLogout = async () => {
+    try {
+      await axios.post("/api/auth/logout");
+    } catch (err) {
+      console.error("Logout failed", err);
+    } finally {
+      setIsLoggedIn(false);
+      setEmail("");
+      setNickname("");
+      setConnectedExchanges([]);
+      if (logoutTimerRef.current) {
+        window.clearTimeout(logoutTimerRef.current);
+        logoutTimerRef.current = null;
+      }
+    }
   };
 
   const checkAuth = async () => {
@@ -74,7 +81,7 @@ const App: React.FC = () => {
         fetchConnectedExchanges();
       }
     } catch (err) {
-      console.log("세션 없음");
+      console.log("No active session");
     } finally {
       setLoading(false);
     }
@@ -89,17 +96,26 @@ const App: React.FC = () => {
 
   const fetchData = async () => {
     try {
-      setError(null);
       const kimpRes = await axios.get<KimchPremium[]>("/api/kimp/current");
       setKimpList(kimpRes.data);
     } catch (err) {
-      setError("서버 연결 실패");
+      console.error("Failed to fetch kimp data", err);
     }
   };
 
   useEffect(() => {
-    checkAuth();
-    fetchData();
+    const initializeApp = async () => {
+      try {
+        await ensureCsrfToken();
+      } catch (err) {
+        console.error("Failed to initialize CSRF token", err);
+      } finally {
+        await checkAuth();
+        await fetchData();
+      }
+    };
+
+    void initializeApp();
 
     const stompClient = new Client({
       webSocketFactory: () => new SockJS("/ws-stomp"),
@@ -114,11 +130,43 @@ const App: React.FC = () => {
           if (msg.body) {
             try {
               const data = JSON.parse(msg.body);
-              if (Array.isArray(data)) {
-                setKimpList(data);
-                setLoading(false);
-              }
-            } catch (e) {}
+              setKimpList((prev) => {
+                const foreignExchange =
+                  selectedForeignExchange === "BINANCE" ? "BINANCE_FUTURES" : "BYBIT_FUTURES";
+                const updates = (Array.isArray(data) ? data : [data]).map((item: Partial<KimchPremium>) => ({
+                  symbol: item.symbol ?? "",
+                  domesticExchange: selectedDomesticExchange,
+                  foreignExchange,
+                  ratio: item.standardRatio ?? item.ratio ?? 0,
+                  standardRatio: item.standardRatio ?? null,
+                  entryRatio: item.entryRatio ?? item.standardRatio ?? null,
+                  exitRatio: item.exitRatio ?? item.standardRatio ?? null,
+                  fundingRate: null,
+                  adjustedApr: null,
+                  liquidationPrice: null,
+                  tradeVolume: null,
+                }));
+                const next = [...prev];
+
+                updates.forEach((newItem: KimchPremium) => {
+                  const idx = next.findIndex(
+                    (item) =>
+                      item.symbol === newItem.symbol &&
+                      item.domesticExchange === newItem.domesticExchange &&
+                      item.foreignExchange === newItem.foreignExchange,
+                  );
+                  if (idx !== -1) {
+                    next[idx] = { ...next[idx], ...newItem };
+                  } else {
+                    next.push(newItem);
+                  }
+                });
+                return [...next];
+              });
+              setLoading(false);
+            } catch (e) {
+              console.error("WS parsing error:", e);
+            }
           }
         });
       },
@@ -177,9 +225,9 @@ const App: React.FC = () => {
     setIsAuthLoading(true);
     try {
       await axios.post("/api/auth/login", { email, password });
-      checkAuth();
+      await checkAuth();
     } catch (err: any) {
-      setLoginError(err.response?.data || "로그인 실패");
+      setLoginError(err.response?.data?.message || err.response?.data || "로그인 실패");
     } finally {
       setIsAuthLoading(false);
     }
@@ -193,7 +241,7 @@ const App: React.FC = () => {
       alert("회원가입 완료");
       setAuthMode("login");
     } catch (err: any) {
-      setLoginError(err.response?.data || "회원가입 실패");
+      setLoginError(err.response?.data?.message || err.response?.data || "회원가입 실패");
     } finally {
       setIsAuthLoading(false);
     }
@@ -230,9 +278,9 @@ const App: React.FC = () => {
         <main className="main-content">
           <Routes>
             <Route path="/" element={
-              <Dashboard 
-                kimpList={kimpList} 
-                fetchData={fetchData} 
+              <Dashboard
+                kimpList={kimpList}
+                fetchData={fetchData}
                 selectedDomesticExchange={selectedDomesticExchange}
                 setSelectedDomesticExchange={setSelectedDomesticExchange}
                 selectedForeignExchange={selectedForeignExchange}
@@ -287,6 +335,7 @@ const App: React.FC = () => {
               element={
                 isLoggedIn ? (
                   <MyPage
+                    kimpList={kimpList}
                     email={email}
                     nickname={nickname}
                     handleUpdateProfile={handleUpdateProfile}

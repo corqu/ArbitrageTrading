@@ -10,6 +10,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Collections;
@@ -41,6 +42,11 @@ public class AuthController {
                 .header(HttpHeaders.SET_COOKIE, accessCookie.toString())
                 .header(HttpHeaders.SET_COOKIE, refreshCookie.toString())
                 .body("Login successful");
+    }
+
+    @GetMapping("/csrf")
+    public ResponseEntity<?> csrf(CsrfToken csrfToken) {
+        return ResponseEntity.ok(Collections.singletonMap("token", csrfToken.getToken()));
     }
 
     @PostMapping("/logout")

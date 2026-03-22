@@ -9,7 +9,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -61,10 +60,19 @@ public class TradeOrderHistoryService {
     }
 
     private TradeOrderHistoryRowDto toDto(TradeOrder first, TradeOrder second) {
+        String normalizedRole = normalizeRole(first != null ? first.getOrderRole() : second != null ? second.getOrderRole() : null);
         return TradeOrderHistoryRowDto.builder()
                 .id(buildMergedId(first, second))
+                .botKey(first != null ? first.getBotKey() : second != null ? second.getBotKey() : "-")
+                .symbol(buildMergedValue(first != null ? first.getSymbol() : null, second != null ? second.getSymbol() : null))
+                .phase(resolvePhase(normalizedRole))
                 .exchange(buildMergedValue(first != null ? first.getExchange() : null, second != null ? second.getExchange() : null))
                 .quantity(buildMergedValue(formatQuantity(first), formatQuantity(second)))
+                .requestedQty(buildMergedValue(formatRequestedQty(first), formatRequestedQty(second)))
+                .executedQty(buildMergedValue(formatExecutedQty(first), formatExecutedQty(second)))
+                .remainingQty(buildMergedValue(formatRemainingQty(first), formatRemainingQty(second)))
+                .requestedPrice(buildMergedValue(formatRequestedPrice(first), formatRequestedPrice(second)))
+                .averagePrice(buildMergedValue(formatAveragePrice(first), formatAveragePrice(second)))
                 .status(buildMergedValue(first != null ? first.getStatus() : null, second != null ? second.getStatus() : null))
                 .build();
     }
@@ -83,6 +91,30 @@ public class TradeOrderHistoryService {
                 ? order.getExecutedQty()
                 : order.getRequestedQty();
         return quantity != null ? stripTrailingZeros(quantity) : null;
+    }
+
+    private String formatRequestedQty(TradeOrder order) {
+        return formatNumeric(order != null ? order.getRequestedQty() : null);
+    }
+
+    private String formatExecutedQty(TradeOrder order) {
+        return formatNumeric(order != null ? order.getExecutedQty() : null);
+    }
+
+    private String formatRemainingQty(TradeOrder order) {
+        return formatNumeric(order != null ? order.getRemainingQty() : null);
+    }
+
+    private String formatRequestedPrice(TradeOrder order) {
+        return formatNumeric(order != null ? order.getRequestedPrice() : null);
+    }
+
+    private String formatAveragePrice(TradeOrder order) {
+        return formatNumeric(order != null ? order.getAveragePrice() : null);
+    }
+
+    private String formatNumeric(Double value) {
+        return value != null ? stripTrailingZeros(value) : null;
     }
 
     private String stripTrailingZeros(Double value) {
@@ -122,6 +154,15 @@ public class TradeOrderHistoryService {
             return role.substring(0, role.length() - "_FOREIGN".length());
         }
         return role;
+    }
+
+    private String resolvePhase(String normalizedRole) {
+        return switch (normalizedRole) {
+            case "ENTRY" -> "ENTRY";
+            case "REBALANCE" -> "HOLD";
+            case "EXIT", "STOP_LOSS", "TAKE_PROFIT", "FAILSAFE" -> "EXIT";
+            default -> normalizedRole;
+        };
     }
 
     private long resolveSortId(TradeOrder first, TradeOrder second) {

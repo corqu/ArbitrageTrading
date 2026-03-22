@@ -11,6 +11,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public class PriceManager {
     private final org.springframework.context.ApplicationEventPublisher eventPublisher;
     private final Map<String, Double> prices = new ConcurrentHashMap<>();
+    private final Map<String, Double> bestAskPrices = new ConcurrentHashMap<>();
+    private final Map<String, Double> bestBidPrices = new ConcurrentHashMap<>();
     private final Map<String, Double> fundingRates = new ConcurrentHashMap<>();
     private final Map<String, Double> tradeVolumes = new ConcurrentHashMap<>();
     private final Map<String, Long> nextFundingTimes = new ConcurrentHashMap<>();
@@ -25,8 +27,30 @@ public class PriceManager {
         tradeVolumes.put(key, volume);
     }
 
+    public void updateBestAsk(String key, double price) {
+        if (price > 0) {
+            bestAskPrices.put(key, price);
+            eventPublisher.publishEvent(new PriceChangedEvent(key, price));
+        }
+    }
+
+    public void updateBestBid(String key, double price) {
+        if (price > 0) {
+            bestBidPrices.put(key, price);
+            eventPublisher.publishEvent(new PriceChangedEvent(key, price));
+        }
+    }
+
     public Double getTradeVolume(String key) {
         return tradeVolumes.get(key);
+    }
+
+    public Double getBestAsk(String key) {
+        return bestAskPrices.get(key);
+    }
+
+    public Double getBestBid(String key) {
+        return bestBidPrices.get(key);
     }
 
     public void updateFundingRate(String coin, double rate, long nextTime) {
@@ -40,6 +64,7 @@ public class PriceManager {
         }
 
         currentUsdKrw = price;
+        eventPublisher.publishEvent(new PriceChangedEvent("KRW-USDT", price));
     }
 
     public Double getPrice(String key){

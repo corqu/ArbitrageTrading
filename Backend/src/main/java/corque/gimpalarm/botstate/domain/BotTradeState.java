@@ -1,6 +1,7 @@
 package corque.gimpalarm.botstate.domain;
 
 import corque.gimpalarm.coin.domain.BotStatus;
+import corque.gimpalarm.coin.domain.BotErrorReason;
 import corque.gimpalarm.common.domain.BaseEntity;
 import corque.gimpalarm.user.domain.User;
 import corque.gimpalarm.userbot.domain.UserBot;
@@ -61,8 +62,9 @@ public class BotTradeState extends BaseEntity {
 
     private LocalDateTime lastCheckedAt;
 
-    @Column(length = 500)
-    private String errorReason;
+    @Enumerated(EnumType.STRING)
+    @Column(length = 50)
+    private BotErrorReason errorReason;
 
     public void setUserBot(UserBot userBot) {
         this.userBot = userBot;

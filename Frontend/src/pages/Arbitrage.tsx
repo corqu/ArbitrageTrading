@@ -135,11 +135,17 @@ const Arbitrage: React.FC<ArbitrageProps> = ({
   };
 
   const filteredList = useMemo(() => {
-    return kimpList.filter(item => 
-      item.domesticExchange === selectedDomesticExchange && 
-      item.symbol.toLowerCase().includes(searchTerm.toLowerCase())
+    const foreignExMatch =
+      selectedForeignExchange === "BINANCE"
+        ? "BINANCE_FUTURES"
+        : "BYBIT_FUTURES";
+    return kimpList.filter(
+      (item) =>
+        item.domesticExchange === selectedDomesticExchange &&
+        item.foreignExchange === foreignExMatch &&
+        item.symbol.toLowerCase().includes(searchTerm.toLowerCase()),
     );
-  }, [kimpList, searchTerm, selectedDomesticExchange]);
+  }, [kimpList, searchTerm, selectedDomesticExchange, selectedForeignExchange]);
 
   const runAnalysisForAll = async () => {
     const symbols = filteredList.map(item => item.symbol);
@@ -150,8 +156,8 @@ const Arbitrage: React.FC<ArbitrageProps> = ({
 
   const arbitrageList = useMemo(() => {
     return [...filteredList].sort((a, b) => {
-      const resA = backtestResults[a.symbol]?.totalReturn ?? (a.adjustedApr || -100);
-      const resB = backtestResults[b.symbol]?.totalReturn ?? (b.adjustedApr || -100);
+      const resA = backtestResults[a.symbol]?.totalReturn ?? (a.standardRatio || -100);
+      const resB = backtestResults[b.symbol]?.totalReturn ?? (b.standardRatio || -100);
       return resB - resA;
     });
   }, [filteredList, backtestResults]);
@@ -297,8 +303,58 @@ const Arbitrage: React.FC<ArbitrageProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
                 <div style={{ background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-color)', width: '48px', height: '48px', borderRadius: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '1rem', border: '1px solid rgba(56, 189, 248, 0.2)' }}>{rec.symbol}</div>
-                <div style={{ display: 'flex', gap: '2.5rem' }}>
-                  <div><div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginBottom: '0.2rem' }}>현재 김프</div><div style={{ fontWeight: 700, fontSize: '1.1rem' }} className={rec.ratio >= 0 ? 'positive' : 'negative'}>{rec.ratio.toFixed(2)}%</div></div>
+                <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap" }}>
+                  <div>
+                    <div
+                      style={{
+                        color: "var(--text-secondary)",
+                        fontSize: "0.7rem",
+                        marginBottom: "0.1rem",
+                      }}
+                    >
+                      표준 김프
+                    </div>
+                    <div
+                      style={{ fontWeight: 700, fontSize: "1rem" }}
+                      className={(rec.standardRatio ?? 0) >= 0 ? "positive" : "negative"}
+                    >
+                      {(rec.standardRatio ?? 0).toFixed(2)}%
+                    </div>
+                  </div>
+                  <div>
+                    <div
+                      style={{
+                        color: "var(--text-secondary)",
+                        fontSize: "0.7rem",
+                        marginBottom: "0.1rem",
+                      }}
+                    >
+                      매수 김프
+                    </div>
+                    <div
+                      style={{ fontWeight: 700, fontSize: "1rem" }}
+                      className={(rec.entryRatio ?? 0) >= 0 ? "positive" : "negative"}
+                    >
+                      {(rec.entryRatio ?? 0).toFixed(2)}%
+                    </div>
+                  </div>
+                  <div>
+                    <div
+                      style={{
+                        color: "var(--text-secondary)",
+                        fontSize: "0.7rem",
+                        marginBottom: "0.1rem",
+                      }}
+                    >
+                      매도 김프
+                    </div>
+                    <div
+                      style={{ fontWeight: 700, fontSize: "1rem" }}
+                      className={(rec.exitRatio ?? 0) >= 0 ? "positive" : "negative"}
+                    >
+                      {(rec.exitRatio ?? 0).toFixed(2)}%
+                    </div>
+                  </div>
                   {backtestResults[rec.symbol] ? (
                     <div>
                       <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginBottom: '0.2rem' }}>30일 누적 수익</div>

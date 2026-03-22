@@ -2,6 +2,7 @@ package corque.gimpalarm.botstate.service;
 
 import corque.gimpalarm.botstate.domain.BotTradeState;
 import corque.gimpalarm.botstate.repository.BotTradeStateRepository;
+import corque.gimpalarm.coin.domain.BotErrorReason;
 import corque.gimpalarm.coin.domain.BotStatus;
 import corque.gimpalarm.userbot.domain.UserBot;
 import lombok.AllArgsConstructor;
@@ -69,15 +70,19 @@ public class BotTradeStateService {
     public List<BotTradeState> findActiveStates() {
         return botTradeStateRepository.findAllByStatusIn(List.of(
                 BotStatus.WAITING,
+                BotStatus.ENTRY_SUBMITTING,
+                BotStatus.ENTRY_PENDING,
                 BotStatus.ENTERING,
                 BotStatus.HOLDING,
+                BotStatus.EXIT_SUBMITTING,
+                BotStatus.EXIT_PENDING,
                 BotStatus.EXITING,
                 BotStatus.ERROR
         ));
     }
 
     @Transactional
-    public BotTradeState updateStatus(BotTradeState state, BotStatus status, String errorReason) {
+    public BotTradeState updateStatus(BotTradeState state, BotStatus status, BotErrorReason errorReason) {
         state.setStatus(status);
         state.setErrorReason(errorReason);
         state.setLastCheckedAt(LocalDateTime.now());
