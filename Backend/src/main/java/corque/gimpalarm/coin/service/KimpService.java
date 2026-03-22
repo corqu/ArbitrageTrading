@@ -167,12 +167,16 @@ public class KimpService {
         Double standardRatio = standardDomesticPrice != null && standardDomesticPrice > 0
                 ? calculateRatio(standardDomesticPrice, foreignPrice, usdKrw)
                 : null;
-        Double entryRatio = entryDomesticPrice != null && entryDomesticPrice > 0
-                ? calculateRatio(entryDomesticPrice, foreignPrice, usdKrw)
-                : standardRatio;
-        Double exitRatio = exitDomesticPrice != null && exitDomesticPrice > 0
-                ? calculateRatio(exitDomesticPrice, foreignPrice, usdKrw)
-                : standardRatio;
+
+        Double entryRatio = standardRatio;
+        if (entryDomesticPrice != null && entryDomesticPrice > 0) {
+            entryRatio = calculateRatio(entryDomesticPrice, foreignPrice, usdKrw);
+        }
+
+        Double exitRatio = standardRatio;
+        if (exitDomesticPrice != null && exitDomesticPrice > 0) {
+            exitRatio = calculateRatio(exitDomesticPrice, foreignPrice, usdKrw);
+        }
         return KimpResponseDto.builder()
                 .symbol(symbol)
                 .domesticExchange(domesticEx)

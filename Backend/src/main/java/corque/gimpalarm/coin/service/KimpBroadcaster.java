@@ -179,14 +179,14 @@ public class KimpBroadcaster {
     }
 
     private KimchPremium buildAverageKimp(String symbol, KimpResponseDto ub, KimpResponseDto bt, String foreignEx) {
-        double avgStandardRatio;
+        Double avgStandardRatio;
         Double avgEntryRatio;
         Double avgExitRatio;
         Double fundingRate;
         Double tradeVolume;
 
         if (ub != null && bt != null) {
-            avgStandardRatio = (ub.getStandardRatio() + bt.getStandardRatio()) / 2.0;
+            avgStandardRatio = averageRatio(ub.getStandardRatio(), bt.getStandardRatio(), 0.0);
             avgEntryRatio = averageRatio(ub.getEntryRatio(), bt.getEntryRatio(), avgStandardRatio);
             avgExitRatio = averageRatio(ub.getExitRatio(), bt.getExitRatio(), avgStandardRatio);
             fundingRate = ub.getFundingRate();
@@ -194,17 +194,21 @@ public class KimpBroadcaster {
                     + (bt.getTradeVolume() != null ? bt.getTradeVolume() : 0.0);
         } else if (ub != null) {
             avgStandardRatio = ub.getStandardRatio();
-            avgEntryRatio = ub.getEntryRatio();
-            avgExitRatio = ub.getExitRatio();
+            avgEntryRatio = averageRatio(ub.getEntryRatio(), null, avgStandardRatio != null ? avgStandardRatio : 0.0);
+            avgExitRatio = averageRatio(ub.getExitRatio(), null, avgStandardRatio != null ? avgStandardRatio : 0.0);
             fundingRate = ub.getFundingRate();
             tradeVolume = ub.getTradeVolume();
         } else if (bt != null) {
             avgStandardRatio = bt.getStandardRatio();
-            avgEntryRatio = bt.getEntryRatio();
-            avgExitRatio = bt.getExitRatio();
+            avgEntryRatio = averageRatio(bt.getEntryRatio(), null, avgStandardRatio != null ? avgStandardRatio : 0.0);
+            avgExitRatio = averageRatio(bt.getExitRatio(), null, avgStandardRatio != null ? avgStandardRatio : 0.0);
             fundingRate = bt.getFundingRate();
             tradeVolume = bt.getTradeVolume();
         } else {
+            return null;
+        }
+
+        if (avgStandardRatio == null) {
             return null;
         }
 
