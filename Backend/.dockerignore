@@ -1,0 +1,9 @@
+.git
+.gitignore
+.gradle
+.gradle-user
+.gradle-user-home
+.idea
+build
+out
+HELP.md

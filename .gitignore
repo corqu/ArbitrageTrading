@@ -1,0 +1,6 @@
+### env
+*.env*
+
+### db
+mysql/data/
+influxdb/**
