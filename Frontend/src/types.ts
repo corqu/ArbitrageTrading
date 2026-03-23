@@ -26,6 +26,7 @@ export interface SubscribedBot {
   id?: number;
   symbol: string;
   isActive: boolean;
+  status?: string;
   entryKimp: number;
   exitKimp: number;
   amountKrw: number;

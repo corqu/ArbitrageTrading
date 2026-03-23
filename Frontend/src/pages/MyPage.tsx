@@ -8,7 +8,6 @@ import {
   RefreshCw,
   Repeat,
   Play,
-  Square,
   Settings,
   Save,
 } from "lucide-react";
@@ -77,7 +76,28 @@ const MyPage: React.FC<MyPageProps> = ({
   const [foreignAssets, setForeignAssets] = useState<any>(null);
   const [isLoadingForeign, setIsLoadingForeign] = useState(false);
 
-  const [tradeOrders, setTradeOrders] = useState<any[]>([]);
+  const [tradeOrders, setTradeOrders] = useState<
+    {
+      id: string;
+      botKey: string;
+      symbol: string;
+        entryAt: string;
+        exitAt: string;
+        phase: string;
+        exchange: string;
+        quantity: string;
+      requestedQty: string;
+      executedQty: string;
+      remainingQty: string;
+      requestedPrice: string;
+      averagePrice: string;
+      status: string;
+    }[]
+  >([]);
+  const [tradeOrdersPage, setTradeOrdersPage] = useState(0);
+  const [tradeOrdersTotalPages, setTradeOrdersTotalPages] = useState(0);
+  const [hasNextTradeOrdersPage, setHasNextTradeOrdersPage] = useState(false);
+  const [hasPreviousTradeOrdersPage, setHasPreviousTradeOrdersPage] = useState(false);
   const [subscribedBots, setSubscribedBots] = useState<SubscribedBot[]>([]);
   const [isUpdatingBot, setIsUpdatingBot] = useState<string | null>(null);
   
@@ -201,10 +221,16 @@ const MyPage: React.FC<MyPageProps> = ({
     }
   };
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (page = 0) => {
     try {
-      const res = await axios.get("/api/user/credentials/orders");
-      setTradeOrders(res.data);
+      const res = await axios.get("/api/user/credentials/orders", {
+        params: { page, size: 10 },
+      });
+      setTradeOrders(res.data.content ?? []);
+      setTradeOrdersPage(res.data.page ?? 0);
+      setTradeOrdersTotalPages(res.data.totalPages ?? 0);
+      setHasNextTradeOrdersPage(res.data.hasNext ?? false);
+      setHasPreviousTradeOrdersPage(res.data.hasPrevious ?? false);
     } catch (e) {}
   };
 
@@ -213,20 +239,6 @@ const MyPage: React.FC<MyPageProps> = ({
       const res = await axios.get("/api/user-bots");
       setSubscribedBots(res.data);
     } catch (e) {}
-  };
-
-  const toggleBotActive = async (bot: SubscribedBot) => {
-    try {
-      await axios.post(`/api/trading/execute`, {
-        symbol: bot.symbol, 
-        domesticExchange: bot.domesticExchange, 
-        foreignExchange: bot.foreignExchange,
-        action: bot.isActive ? 'STOP' : 'START_AUTO'
-      });
-      fetchSubscribedBots();
-    } catch (e) {
-      alert("봇 상태 변경에 실패했습니다.");
-    }
   };
 
   const updateBotSettings = async (bot: SubscribedBot) => {
@@ -254,6 +266,66 @@ const MyPage: React.FC<MyPageProps> = ({
     }
   };
 
+  const getBotStatusLabel = (status?: string) => {
+    switch (status) {
+      case "WAITING":
+        return "READY";
+      case "ENTRY_SUBMITTING":
+      case "ENTRY_PENDING":
+      case "ENTERING":
+        return "ENTRY";
+      case "HOLDING":
+        return "HOLDING";
+      case "EXIT_SUBMITTING":
+      case "EXIT_PENDING":
+      case "EXITING":
+        return "EXIT";
+      case "STOPPED":
+        return "STOPPED";
+      case "ERROR":
+        return "ERROR";
+      default:
+        return "READY";
+    }
+  };
+
+  const getBotStatusStyle = (status?: string) => {
+    const label = getBotStatusLabel(status);
+    if (label === "ENTRY") {
+      return {
+        background: "rgba(56, 189, 248, 0.1)",
+        color: "var(--accent-color)",
+        border: "1px solid rgba(56, 189, 248, 0.2)",
+      };
+    }
+    if (label === "HOLDING") {
+      return {
+        background: "rgba(16, 185, 129, 0.1)",
+        color: "#10b981",
+        border: "1px solid rgba(16, 185, 129, 0.2)",
+      };
+    }
+    if (label === "EXIT") {
+      return {
+        background: "rgba(245, 158, 11, 0.1)",
+        color: "#f59e0b",
+        border: "1px solid rgba(245, 158, 11, 0.2)",
+      };
+    }
+    if (label === "ERROR") {
+      return {
+        background: "rgba(239, 68, 68, 0.1)",
+        color: "#ef4444",
+        border: "1px solid rgba(239, 68, 68, 0.2)",
+      };
+    }
+    return {
+      background: "rgba(255,255,255,0.05)",
+      color: "var(--text-secondary)",
+      border: "1px solid var(--border-color)",
+    };
+  };
+
   useEffect(() => {
     fetchAssetData(domesticExchange, setDomesticAssets, setIsLoadingDomestic);
   }, [domesticExchange, connectedExchanges]);
@@ -263,7 +335,7 @@ const MyPage: React.FC<MyPageProps> = ({
   }, [foreignExchange, connectedExchanges]);
 
   useEffect(() => {
-    fetchOrders();
+    fetchOrders(0);
     fetchSubscribedBots();
   }, [connectedExchanges]);
 
@@ -993,31 +1065,21 @@ const MyPage: React.FC<MyPageProps> = ({
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '0.6rem' }}>
-                      <button
-                        onClick={() => toggleBotActive(bot)}
+                    <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+                      <div
                         style={{
                           display: "flex",
                           alignItems: "center",
                           gap: "0.5rem",
                           padding: "0.5rem 1rem",
                           borderRadius: "0.5rem",
-                          border: "none",
-                          background: bot.isActive
-                            ? "rgba(239, 68, 68, 0.1)"
-                            : "rgba(16, 185, 129, 0.1)",
-                          color: bot.isActive ? "#ef4444" : "#10b981",
                           fontWeight: 700,
-                          cursor: "pointer",
+                          ...getBotStatusStyle(bot.status),
                         }}
                       >
-                        {bot.isActive ? (
-                          <Square size={14} fill="currentColor" />
-                        ) : (
-                          <Play size={14} fill="currentColor" />
-                        )}
-                        {bot.isActive ? "중지" : "시작"}
-                      </button>
+                        <Play size={14} />
+                        {getBotStatusLabel(bot.status)}
+                      </div>
                       <button
                         onClick={() => bot.id && deleteBot(bot.id, bot.symbol)}
                         style={{
@@ -1219,33 +1281,55 @@ const MyPage: React.FC<MyPageProps> = ({
           style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}
         >
           {tradeOrders.length > 0 ? (
-            tradeOrders.map((pair) => (
+            tradeOrders.map((order) => (
               <div
-                key={pair.id}
+                key={order.id}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 4px 1fr",
+                  gridTemplateColumns: "1.8fr 0.8fr 1fr 1fr 1fr",
                   background: "rgba(0,0,0,0.15)",
                   border: "1px solid var(--border-color)",
                   borderRadius: "0.6rem",
+                  overflow: "hidden",
                 }}
               >
-                <div style={{ padding: "0.8rem" }}>
-                  {pair.upbit && (
-                    <div>
-                      {pair.upbit.symbol} {pair.upbit.side} @
-                      {pair.upbit.price?.toLocaleString()}
-                    </div>
-                  )}
+                <div style={{ padding: "0.8rem", display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <div style={{ fontWeight: 700 }}>{order.symbol}</div>
+                  <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                    {order.exchange}
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.3rem" }}>
+                    진입: {order.entryAt}
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+                    종료: {order.exitAt}
+                  </div>
                 </div>
-                <div style={{ background: "var(--border-color)" }} />
-                <div style={{ padding: "0.8rem" }}>
-                  {pair.binance && (
-                    <div>
-                      {pair.binance.symbol} {pair.binance.side} @
-                      {pair.binance.price?.toFixed(2)}
-                    </div>
-                  )}
+                <div style={{ padding: "0.8rem", borderLeft: "1px solid var(--border-color)" }}>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.3rem" }}>
+                    단계
+                  </div>
+                  <div style={{ fontWeight: 700 }}>{order.phase}</div>
+                </div>
+                <div style={{ padding: "0.8rem", borderLeft: "1px solid var(--border-color)" }}>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.3rem" }}>
+                    수량
+                  </div>
+                  <div style={{ fontWeight: 700 }}>{order.quantity}</div>
+                </div>
+                <div style={{ padding: "0.8rem", borderLeft: "1px solid var(--border-color)" }}>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.3rem" }}>
+                    체결가
+                  </div>
+                  <div style={{ fontWeight: 700 }}>
+                    {order.averagePrice !== "-" ? order.averagePrice : order.requestedPrice}
+                  </div>
+                </div>
+                <div style={{ padding: "0.8rem", borderLeft: "1px solid var(--border-color)" }}>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.3rem" }}>
+                    상태
+                  </div>
+                  <div style={{ fontWeight: 700 }}>{order.status}</div>
                 </div>
               </div>
             ))
@@ -1260,6 +1344,57 @@ const MyPage: React.FC<MyPageProps> = ({
               아직 매매 내역이 없습니다.
             </div>
           )}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginTop: "1rem",
+            gap: "1rem",
+          }}
+        >
+          <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+            {tradeOrdersTotalPages > 0
+              ? `${tradeOrdersPage + 1} / ${tradeOrdersTotalPages} 페이지`
+              : "0 / 0 페이지"}
+          </div>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button
+              onClick={() => fetchOrders(tradeOrdersPage - 1)}
+              disabled={!hasPreviousTradeOrdersPage}
+              style={{
+                padding: "0.45rem 0.9rem",
+                borderRadius: "0.4rem",
+                border: "1px solid var(--border-color)",
+                background: hasPreviousTradeOrdersPage
+                  ? "transparent"
+                  : "rgba(255,255,255,0.04)",
+                color: hasPreviousTradeOrdersPage
+                  ? "white"
+                  : "var(--text-secondary)",
+                cursor: hasPreviousTradeOrdersPage ? "pointer" : "default",
+              }}
+            >
+              이전
+            </button>
+            <button
+              onClick={() => fetchOrders(tradeOrdersPage + 1)}
+              disabled={!hasNextTradeOrdersPage}
+              style={{
+                padding: "0.45rem 0.9rem",
+                borderRadius: "0.4rem",
+                border: "1px solid var(--border-color)",
+                background: hasNextTradeOrdersPage
+                  ? "transparent"
+                  : "rgba(255,255,255,0.04)",
+                color: hasNextTradeOrdersPage ? "white" : "var(--text-secondary)",
+                cursor: hasNextTradeOrdersPage ? "pointer" : "default",
+              }}
+            >
+              다음
+            </button>
+          </div>
         </div>
       </div>
     </div>

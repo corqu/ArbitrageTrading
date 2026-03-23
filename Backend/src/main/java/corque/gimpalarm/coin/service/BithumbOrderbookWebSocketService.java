@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -15,12 +16,12 @@ import org.springframework.web.socket.client.WebSocketClient;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 @Service
@@ -36,6 +37,7 @@ public class BithumbOrderbookWebSocketService {
 
     private final Map<String, NavigableMap<Double, Double>> askBooks = new ConcurrentHashMap<>();
     private final Map<String, NavigableMap<Double, Double>> bidBooks = new ConcurrentHashMap<>();
+    private final AtomicReference<WebSocketSession> sessionRef = new AtomicReference<>();
 
     @EventListener(ApplicationReadyEvent.class)
     public void connect() {
@@ -44,6 +46,7 @@ public class BithumbOrderbookWebSocketService {
         client.execute(new TextWebSocketHandler() {
             @Override
             public void afterConnectionEstablished(WebSocketSession session) throws Exception {
+                sessionRef.set(session);
                 List<String> symbols = coinRepository.findAll().stream()
                         .filter(c -> c.isBithumb())
                         .map(c -> "\"" + c.getSymbol().toUpperCase() + "_KRW\"")
@@ -54,12 +57,9 @@ public class BithumbOrderbookWebSocketService {
                     return;
                 }
 
-                String subscribeMessage = String.format(
-                        "{\"type\":\"orderbookdepth\", \"symbols\": [%s]}",
-                        String.join(", ", symbols)
-                );
-                session.sendMessage(new TextMessage(subscribeMessage));
-                log.info("Bithumb orderbook subscribed for {} symbols", symbols.size());
+                session.sendMessage(new TextMessage(buildRealtimeSubscribeMessage(symbols)));
+                session.sendMessage(new TextMessage(buildSnapshotRequestMessage(symbols)));
+                log.info("Bithumb orderbook realtime+snapshot subscribed for {} symbols", symbols.size());
             }
 
             @Override
@@ -95,9 +95,46 @@ public class BithumbOrderbookWebSocketService {
         }, BITHUMB_WSS_URL);
     }
 
+    @Scheduled(fixedRate = 30000)
+    public void refreshSnapshots() {
+        WebSocketSession session = sessionRef.get();
+        if (session == null || !session.isOpen()) {
+            return;
+        }
+
+        try {
+            List<String> symbols = coinRepository.findAll().stream()
+                    .filter(c -> c.isBithumb())
+                    .map(c -> "\"" + c.getSymbol().toUpperCase() + "_KRW\"")
+                    .collect(Collectors.toList());
+
+            if (symbols.isEmpty()) {
+                return;
+            }
+
+            session.sendMessage(new TextMessage(buildSnapshotRequestMessage(symbols)));
+        } catch (Exception e) {
+            log.warn("Failed to refresh Bithumb orderbook snapshots: {}", e.getMessage());
+        }
+    }
+
+    private String buildRealtimeSubscribeMessage(List<String> symbols) {
+        return String.format(
+                "{\"type\":\"orderbookdepth\", \"symbols\": [%s], \"isOnlyRealtime\": true}",
+                String.join(", ", symbols)
+        );
+    }
+
+    private String buildSnapshotRequestMessage(List<String> symbols) {
+        return String.format(
+                "{\"type\":\"orderbooksnapshot\", \"symbols\": [%s], \"isOnlySnapshot\": true}",
+                String.join(", ", symbols)
+        );
+    }
+
     private void applySnapshot(String symbol, JsonNode content) {
         NavigableMap<Double, Double> asks = new ConcurrentSkipListMap<>();
-        NavigableMap<Double, Double> bids = new ConcurrentSkipListMap<>(Comparator.reverseOrder());
+        NavigableMap<Double, Double> bids = new ConcurrentSkipListMap<>((left, right) -> Double.compare(right, left));
 
         fillBook(asks, content.get("asks"));
         fillBook(bids, content.get("bids"));
@@ -108,12 +145,20 @@ public class BithumbOrderbookWebSocketService {
 
     private void applyDepthUpdate(String symbol, JsonNode entries) {
         NavigableMap<Double, Double> asks = askBooks.computeIfAbsent(symbol, key -> new ConcurrentSkipListMap<>());
-        NavigableMap<Double, Double> bids = bidBooks.computeIfAbsent(symbol, key -> new ConcurrentSkipListMap<>(Comparator.reverseOrder()));
+        NavigableMap<Double, Double> bids = bidBooks.computeIfAbsent(
+                symbol,
+                key -> new ConcurrentSkipListMap<>((left, right) -> Double.compare(right, left))
+        );
+
+        if (entries == null || !entries.isArray()) {
+            return;
+        }
 
         for (JsonNode entry : entries) {
             String orderType = text(entry, "orderType");
             double price = parseDouble(entry, "price");
             double quantity = parseDouble(entry, "quantity");
+
             if (price <= 0) {
                 continue;
             }
@@ -133,8 +178,8 @@ public class BithumbOrderbookWebSocketService {
         }
 
         for (JsonNode level : levels) {
-            double price = parseDouble(level, "price");
-            double quantity = parseDouble(level, "quantity");
+            double price = parseSnapshotPrice(level);
+            double quantity = parseSnapshotQuantity(level);
             if (price > 0 && quantity > 0) {
                 book.put(price, quantity);
             }
@@ -183,6 +228,37 @@ public class BithumbOrderbookWebSocketService {
 
         try {
             return Double.parseDouble(value);
+        } catch (NumberFormatException e) {
+            return 0.0;
+        }
+    }
+
+    private double parseSnapshotPrice(JsonNode level) {
+        if (level == null || level.isNull()) {
+            return 0.0;
+        }
+        if (level.isArray() && level.size() >= 1) {
+            return parseNodeDouble(level.get(0));
+        }
+        return parseDouble(level, "price");
+    }
+
+    private double parseSnapshotQuantity(JsonNode level) {
+        if (level == null || level.isNull()) {
+            return 0.0;
+        }
+        if (level.isArray() && level.size() >= 2) {
+            return parseNodeDouble(level.get(1));
+        }
+        return parseDouble(level, "quantity");
+    }
+
+    private double parseNodeDouble(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return 0.0;
+        }
+        try {
+            return Double.parseDouble(node.asText());
         } catch (NumberFormatException e) {
             return 0.0;
         }

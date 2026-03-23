@@ -27,7 +27,7 @@ services:
     restart: always
 
   backend:
-    image: corqu/kimp-be:0.0.8
+    image: corqu/kimp-be:0.0.14
     container_name: backend_kimp
     env_file:
       - .env
@@ -42,7 +42,7 @@ services:
     restart: always
 
   frontend:
-    image: corqu/kimp-fe:0.0.4
+    image: corqu/kimp-fe:0.0.10
     container_name: frontend_kimp
     depends_on:
       - backend

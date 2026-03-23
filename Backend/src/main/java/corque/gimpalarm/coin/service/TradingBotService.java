@@ -37,6 +37,7 @@ public class TradingBotService {
 
     private static final String ENTRY_DOMESTIC = "ENTRY_DOMESTIC";
     private static final String ENTRY_FOREIGN = "ENTRY_FOREIGN";
+    private static final double DEFAULT_STOP_LOSS_BUFFER_PERCENT = 80.0;
 
     private final KimpService kimpService;
     private final UserRepository userRepository;
@@ -60,6 +61,7 @@ public class TradingBotService {
         private Double slPrice;
         private Double tpPrice;
         private LocalDateTime entryTime;
+        private int zeroPositionCount; // 연속으로 포지션이 0으로 조회된 횟수
     }
 
     private final Map<String, ActiveTrade> activeBots = new ConcurrentHashMap<>();
@@ -98,7 +100,8 @@ public class TradingBotService {
                     restoredTrade.getHedgedQty(),
                     restoredTrade.getSlPrice(),
                     restoredTrade.getTpPrice(),
-                    restoredTrade.getEntryTime()
+                    restoredTrade.getEntryTime(),
+                    0 // zeroPositionCount 초기화
             ));
             botStatusSyncService.sync(bot.getUser().getId(), request, botKey, normalizedStatus);
         }
@@ -117,7 +120,7 @@ public class TradingBotService {
             return stopArbitrage(botKey);
         }
 
-        activeBots.put(botKey, new ActiveTrade(request, BotStatus.WAITING, user.getId(), null, null, 0.0, 0.0, 0.0, null, null, null));
+        activeBots.put(botKey, new ActiveTrade(request, BotStatus.WAITING, user.getId(), null, null, 0.0, 0.0, 0.0, null, null, null, 0));
         botStatusSyncService.sync(userId, request, botKey, BotStatus.WAITING);
         return botKey + " trading started";
     }
@@ -397,24 +400,29 @@ public class TradingBotService {
     private void calculateAndSetSlTp(ActiveTrade trade, double entryPrice) {
         int lev = trade.getRequest().getLeverage();
         String botKey = generateBotKey(trade.getUserId(), trade.getRequest());
-        if (trade.getRequest().getStopLossPercent() != null) {
-            trade.setSlPrice(entryPrice * (1 + (trade.getRequest().getStopLossPercent() / 100.0 / lev)));
-            Map<String, Object> slRes = exchangeApiService.orderBinanceFuturesConditional(
-                    trade.getUserId(), trade.getRequest().getSymbol(), "BUY", "SHORT", trade.getHedgedQty(), trade.getSlPrice(), "STOP_MARKET");
-            tradeOrderService.recordOrder(
-                    trade.getUserId(), botKey, "BINANCE", "FUTURES", "STOP_LOSS",
-                    trade.getRequest().getSymbol(), "BUY", "SHORT", "STOP_MARKET", trade.getHedgedQty(), trade.getSlPrice(), slRes
-            );
+        double stopLossPercent = resolveStopLossPercent(trade);
+
+        trade.setSlPrice(entryPrice * (1 + (stopLossPercent / 100.0 / lev)));
+        trade.setTpPrice(null);
+        trade.getRequest().setStopLossPercent(stopLossPercent);
+        trade.getRequest().setTakeProfitPercent(null);
+
+        Map<String, Object> slRes = exchangeApiService.orderBinanceFuturesConditional(
+                trade.getUserId(), trade.getRequest().getSymbol(), "BUY", "SHORT", trade.getHedgedQty(), trade.getSlPrice(), "STOP_MARKET");
+        tradeOrderService.recordOrder(
+                trade.getUserId(), botKey, "BINANCE", "FUTURES", "STOP_LOSS",
+                trade.getRequest().getSymbol(), "BUY", "SHORT", "STOP_MARKET", trade.getHedgedQty(), trade.getSlPrice(), slRes
+        );
+        log.info(">>> [SL-PLACED] botKey={}, symbol={}, hedgedQty={}, stopLossPercent={}, slPrice={}",
+                botKey, trade.getRequest().getSymbol(), trade.getHedgedQty(), stopLossPercent, trade.getSlPrice());
+    }
+
+    private double resolveStopLossPercent(ActiveTrade trade) {
+        Double configured = trade.getRequest().getStopLossPercent();
+        if (configured != null && configured > 0) {
+            return configured;
         }
-        if (trade.getRequest().getTakeProfitPercent() != null) {
-            trade.setTpPrice(entryPrice * (1 - (trade.getRequest().getTakeProfitPercent() / 100.0 / lev)));
-            Map<String, Object> tpRes = exchangeApiService.orderBinanceFuturesConditional(
-                    trade.getUserId(), trade.getRequest().getSymbol(), "BUY", "SHORT", trade.getHedgedQty(), trade.getTpPrice(), "TAKE_PROFIT_MARKET");
-            tradeOrderService.recordOrder(
-                    trade.getUserId(), botKey, "BINANCE", "FUTURES", "TAKE_PROFIT",
-                    trade.getRequest().getSymbol(), "BUY", "SHORT", "TAKE_PROFIT_MARKET", trade.getHedgedQty(), trade.getTpPrice(), tpRes
-            );
-        }
+        return DEFAULT_STOP_LOSS_BUFFER_PERCENT;
     }
 
     private boolean resolveUnbalancedFill(String botKey, ActiveTrade trade, String domesticEx, String symbol,
@@ -512,17 +520,26 @@ public class TradingBotService {
 
     private void checkForeignPositionAlive(String botKey, ActiveTrade trade) {
         double pos = exchangeApiService.getBinanceFuturesPosition(trade.getUserId(), trade.getRequest().getSymbol());
+        
         if (pos == 0.0) {
-            log.warn(">>> [SYSTEM] foreign position closed. close domestic leg");
-            String ex = trade.getRequest().getDomesticExchange().toUpperCase();
-            Map<String, Object> domesticCloseRes = "BITHUMB".equals(ex)
-                    ? exchangeApiService.orderBithumb(trade.getUserId(), trade.getRequest().getSymbol(), "ask", trade.getFilledQty(), null, "market")
-                    : exchangeApiService.orderUpbit(trade.getUserId(), trade.getRequest().getSymbol(), "ask", trade.getFilledQty(), null, "market");
-            tradeOrderService.recordOrder(
-                    trade.getUserId(), botKey, ex, "SPOT", "FAILSAFE_DOMESTIC",
-                    trade.getRequest().getSymbol(), "SELL", null, "MARKET", trade.getFilledQty(), null, domesticCloseRes
-            );
-            transitionToError(botKey, trade, BotErrorReason.FOREIGN_POSITION_LOST, "Foreign position lost", null, true);
+            trade.setZeroPositionCount(trade.getZeroPositionCount() + 1);
+            log.warn(">>> [SYSTEM] foreign position 조회 결과 0 (연속 {}회): {}", trade.getZeroPositionCount(), botKey);
+            
+            if (trade.getZeroPositionCount() >= 3) {
+                log.error(">>> [SYSTEM] foreign position lost confirmed (3 times). close domestic leg: {}", botKey);
+                String ex = trade.getRequest().getDomesticExchange().toUpperCase();
+                Map<String, Object> domesticCloseRes = "BITHUMB".equals(ex)
+                        ? exchangeApiService.orderBithumb(trade.getUserId(), trade.getRequest().getSymbol(), "ask", trade.getFilledQty(), null, "market")
+                        : exchangeApiService.orderUpbit(trade.getUserId(), trade.getRequest().getSymbol(), "ask", trade.getFilledQty(), null, "market");
+                tradeOrderService.recordOrder(
+                        trade.getUserId(), botKey, ex, "SPOT", "FAILSAFE_DOMESTIC",
+                        trade.getRequest().getSymbol(), "SELL", null, "MARKET", trade.getFilledQty(), null, domesticCloseRes
+                );
+                transitionToError(botKey, trade, BotErrorReason.FOREIGN_POSITION_LOST, "Foreign position lost", null, true);
+            }
+        } else if (pos > 0.0) {
+            // 포지션이 정상적으로 조회되면 카운트 리셋
+            trade.setZeroPositionCount(0);
         }
     }
 

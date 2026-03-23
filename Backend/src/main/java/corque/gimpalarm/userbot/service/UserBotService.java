@@ -20,6 +20,7 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class UserBotService {
+    private static final double DEFAULT_STOP_LOSS_BUFFER_PERCENT = 80.0;
 
     private final UserBotRepository userBotRepository;
     private final UserRepository userRepository;
@@ -43,6 +44,7 @@ public class UserBotService {
 
     @Transactional
     public UserBotResponseDto subscribeBot(Long userId, TradingRequest request) {
+        applyRiskDefaults(request);
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new NotFoundException("User not found"));
 
@@ -69,6 +71,7 @@ public class UserBotService {
 
     @Transactional
     public UserBotResponseDto updateBot(Long userId, Long botId, TradingRequest request) {
+        applyRiskDefaults(request);
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new NotFoundException("User not found"));
 
@@ -81,6 +84,8 @@ public class UserBotService {
         userBot.setLeverage(request.getLeverage());
         userBot.setEntryKimp(request.getEntryKimp());
         userBot.setExitKimp(request.getExitKimp());
+        userBot.setStopLossPercent(request.getStopLossPercent());
+        userBot.setTakeProfitPercent(request.getTakeProfitPercent());
         userBot.setStatus(UserBotStatus.WAITING);
 
         tradingBotService.executeTradeForUser(userId, request);
@@ -126,5 +131,16 @@ public class UserBotService {
                 .isActive(userBot.isActive())
                 .status(userBot.getStatus())
                 .build();
+    }
+
+    private void applyRiskDefaults(TradingRequest request) {
+        if (request == null) {
+            return;
+        }
+
+        if (request.getStopLossPercent() == null) {
+            request.setStopLossPercent(DEFAULT_STOP_LOSS_BUFFER_PERCENT);
+        }
+        request.setTakeProfitPercent(null);
     }
 }

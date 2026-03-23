@@ -10,4 +10,6 @@ public class RealtimeKimpDto {
     private Double standardRatio;
     private Double entryRatio;
     private Double exitRatio;
+    private Double fundingRate;
+    private Double tradeVolume;
 }
