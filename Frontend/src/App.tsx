@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import SockJS from "sockjs-client";
 import { Client } from "@stomp/stompjs";
 import { RefreshCw } from "lucide-react";
@@ -13,7 +13,8 @@ import AuthPage from "./pages/AuthPage";
 import type { KimchPremium } from "./types";
 import "./App.css";
 
-const App: React.FC = () => {
+const AppContent: React.FC = () => {
+  const location = useLocation();
   const [kimpList, setKimpList] = useState<KimchPremium[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -92,6 +93,15 @@ const App: React.FC = () => {
       const response = await axios.get("/api/user/credentials/list");
       setConnectedExchanges(response.data);
     } catch (err) {}
+  };
+
+  const refreshSession = async () => {
+    try {
+      await axios.post("/api/auth/refresh");
+      await checkAuth();
+    } catch (err) {
+      console.error("Refresh failed", err);
+    }
   };
 
   const fetchData = async () => {
@@ -178,6 +188,12 @@ const App: React.FC = () => {
       if (logoutTimerRef.current) window.clearTimeout(logoutTimerRef.current);
     };
   }, [selectedDomesticExchange, selectedForeignExchange]);
+
+  useEffect(() => {
+    if (location.pathname === "/mypage" && isLoggedIn) {
+      void refreshSession();
+    }
+  }, [location.pathname, isLoggedIn]);
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -266,107 +282,111 @@ const App: React.FC = () => {
     );
 
   return (
-    <BrowserRouter>
-      <div className="app-container">
-        <Sidebar
-          isLoggedIn={isLoggedIn}
-          email={email}
-          isConnected={isConnected}
-          handleLogout={handleLogout}
-        />
+    <div className="app-container">
+      <Sidebar
+        isLoggedIn={isLoggedIn}
+        email={email}
+        isConnected={isConnected}
+        handleLogout={handleLogout}
+      />
 
-        <main className="main-content">
-          <Routes>
-            <Route path="/" element={
-              <Dashboard
+      <main className="main-content">
+        <Routes>
+          <Route path="/" element={
+            <Dashboard
+              kimpList={kimpList}
+              fetchData={fetchData}
+              selectedDomesticExchange={selectedDomesticExchange}
+              setSelectedDomesticExchange={setSelectedDomesticExchange}
+              selectedForeignExchange={selectedForeignExchange}
+              setSelectedForeignExchange={setSelectedForeignExchange}
+              isConnected={isConnected}
+            />
+          } />
+          <Route
+            path="/arbitrage"
+            element={
+              <Arbitrage
                 kimpList={kimpList}
-                fetchData={fetchData}
                 selectedDomesticExchange={selectedDomesticExchange}
                 setSelectedDomesticExchange={setSelectedDomesticExchange}
                 selectedForeignExchange={selectedForeignExchange}
                 setSelectedForeignExchange={setSelectedForeignExchange}
-                isConnected={isConnected}
+                isLoggedIn={isLoggedIn}
+                connectedExchanges={connectedExchanges}
               />
-            } />
-            <Route
-              path="/arbitrage"
-              element={
-                <Arbitrage
-                  kimpList={kimpList}
-                  selectedDomesticExchange={selectedDomesticExchange}
-                  setSelectedDomesticExchange={setSelectedDomesticExchange}
-                  selectedForeignExchange={selectedForeignExchange}
-                  setSelectedForeignExchange={setSelectedForeignExchange}
-                  isLoggedIn={isLoggedIn}
-                  connectedExchanges={connectedExchanges}
+            }
+          />
+          <Route
+            path="/auth"
+            element={
+              isLoggedIn ? (
+                <Navigate to="/" />
+              ) : (
+                <AuthPage
+                  authMode={authMode}
+                  setAuthMode={setAuthMode}
+                  email={email}
+                  setEmail={setEmail}
+                  password={password}
+                  setPassword={setPassword}
+                  nickname={nickname}
+                  setNickname={setNickname}
+                  handleLogin={handleLogin}
+                  handleSignup={handleSignup}
+                  checkNicknameAvailability={checkNicknameAvailability}
+                  isNicknameChecked={isNicknameChecked}
+                  isNicknameAvailable={isNicknameAvailable}
+                  setIsNicknameChecked={setIsNicknameChecked}
+                  setIsNicknameAvailable={setIsNicknameAvailable}
+                  loginError={loginError}
+                  isAuthLoading={isAuthLoading}
                 />
-              }
-            />
-            <Route
-              path="/auth"
-              element={
-                isLoggedIn ? (
-                  <Navigate to="/" />
-                ) : (
-                  <AuthPage
-                    authMode={authMode}
-                    setAuthMode={setAuthMode}
-                    email={email}
-                    setEmail={setEmail}
-                    password={password}
-                    setPassword={setPassword}
-                    nickname={nickname}
-                    setNickname={setNickname}
-                    handleLogin={handleLogin}
-                    handleSignup={handleSignup}
-                    checkNicknameAvailability={checkNicknameAvailability}
-                    isNicknameChecked={isNicknameChecked}
-                    isNicknameAvailable={isNicknameAvailable}
-                    setIsNicknameChecked={setIsNicknameChecked}
-                    setIsNicknameAvailable={setIsNicknameAvailable}
-                    loginError={loginError}
-                    isAuthLoading={isAuthLoading}
-                  />
-                )
-              }
-            />
-            <Route
-              path="/mypage"
-              element={
-                isLoggedIn ? (
-                  <MyPage
-                    kimpList={kimpList}
-                    email={email}
-                    nickname={nickname}
-                    handleUpdateProfile={handleUpdateProfile}
-                    newNickname={newNickname}
-                    setNewNickname={setNewNickname}
-                    newPassword={newPassword}
-                    setNewPassword={setNewPassword}
-                    isEditingProfile={isEditingProfile}
-                    setIsEditingProfile={setIsEditingProfile}
-                    connectedExchanges={connectedExchanges}
-                    handleDeleteExchange={handleDeleteExchange}
-                    showAddExchangeModal={showAddExchangeModal}
-                    setShowAddExchangeModal={setShowAddExchangeModal}
-                    selectedExchange={selectedExchange}
-                    setSelectedExchange={setSelectedExchange}
-                    apiKey={apiKey}
-                    setApiKey={setApiKey}
-                    apiSecret={apiSecret}
-                    setApiSecret={setApiSecret}
-                    handleConnectExchange={handleConnectExchange}
-                  />
-                ) : (
-                  <Navigate to="/auth" />
-                )
-              }
-            />
-          </Routes>
-        </main>
-      </div>
-    </BrowserRouter>
+              )
+            }
+          />
+          <Route
+            path="/mypage"
+            element={
+              isLoggedIn ? (
+                <MyPage
+                  kimpList={kimpList}
+                  email={email}
+                  nickname={nickname}
+                  handleUpdateProfile={handleUpdateProfile}
+                  newNickname={newNickname}
+                  setNewNickname={setNewNickname}
+                  newPassword={newPassword}
+                  setNewPassword={setNewPassword}
+                  isEditingProfile={isEditingProfile}
+                  setIsEditingProfile={setIsEditingProfile}
+                  connectedExchanges={connectedExchanges}
+                  handleDeleteExchange={handleDeleteExchange}
+                  showAddExchangeModal={showAddExchangeModal}
+                  setShowAddExchangeModal={setShowAddExchangeModal}
+                  selectedExchange={selectedExchange}
+                  setSelectedExchange={setSelectedExchange}
+                  apiKey={apiKey}
+                  setApiKey={setApiKey}
+                  apiSecret={apiSecret}
+                  setApiSecret={setApiSecret}
+                  handleConnectExchange={handleConnectExchange}
+                />
+              ) : (
+                <Navigate to="/auth" />
+              )
+            }
+          />
+        </Routes>
+      </main>
+    </div>
   );
 };
+
+const App: React.FC = () => (
+  <BrowserRouter>
+    <AppContent />
+  </BrowserRouter>
+);
 
 export default App;
