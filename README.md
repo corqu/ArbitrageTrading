@@ -2,7 +2,7 @@
 
 국내외 거래소 간 김치프리미엄을 실시간으로 추적하고, 차익거래 진입/청산 기준을 분석하며, 사용자별 자동매매 봇을 관리할 수 있는 웹 서비스입니다.
 
-프론트엔드는 React + Vite로 구성되어 있고, 백엔드는 Spring Boot 기반으로 REST API, WebSocket, 자동매매 로직을 제공합니다. 데이터 저장은 MySQL, 시계열 이력 조회는 InfluxDB를 사용합니다.
+프론트엔드는 React + Vite로 구성되어 있고, 백엔드는 Spring Boot 기반으로 REST API, WebSocket, 자동매매 로직을 제공합니다. 서비스는 Nginx 리버스 프록시 뒤에서 동작하며, 데이터 저장은 MySQL, 시계열 이력 조회는 InfluxDB를 사용합니다.
 
 ## 프로젝트 개요
 
@@ -80,6 +80,7 @@ GimpAlarm은 단순 시세 조회가 아니라 다음 흐름을 하나의 서비
 
 - MySQL 8
 - InfluxDB 2.7
+- Nginx
 - Docker Compose
 
 ## 디렉터리 구조
@@ -89,7 +90,7 @@ gimpalarm/
 ├─ Frontend/                 # React + Vite 프론트엔드
 ├─ Backend/                  # Spring Boot 백엔드
 ├─ mysql/                    # MySQL 볼륨 데이터
-├─ docker-compose.yml        # MySQL / InfluxDB 실행
+├─ docker-compose.yml        # MySQL / InfluxDB / Backend / Frontend / Nginx 실행
 ├─ .env                      # 로컬 환경변수
 └─ README.md
 ```
@@ -97,9 +98,13 @@ gimpalarm/
 ## 아키텍처
 
 ```text
-Frontend (React, Vite)
-  ├─ REST API 요청
-  └─ WebSocket(STOMP/SockJS) 구독
+Client
+  │
+  ▼
+Nginx
+  ├─ Frontend 정적 파일 제공
+  ├─ /api 프록시
+  └─ /ws-stomp 프록시
            │
            ▼
 Backend (Spring Boot)
@@ -178,7 +183,7 @@ Backend (Spring Boot)
   - `/topic/kimp/bt-bb`
   - `/topic/kimp/ub-bn/BTC`
 
-프론트엔드는 Vite proxy를 통해 `/api`, `/ws-stomp` 요청을 백엔드 `localhost:8080`으로 전달합니다.
+개발 모드에서 프론트엔드를 별도로 실행하는 경우에는 Vite proxy를 통해 `/api`, `/ws-stomp` 요청을 백엔드 `localhost:8080`으로 전달합니다.
 
 ## 로컬 실행 방법
 
@@ -189,7 +194,7 @@ Backend (Spring Boot)
 - Java 21
 - Docker / Docker Compose
 
-### 2. 인프라 실행
+### 2. Docker Compose 실행
 
 루트 디렉터리에서:
 
@@ -201,32 +206,11 @@ docker compose up -d
 
 - MySQL 8.0
 - InfluxDB 2.7
+- Backend
+- Frontend
+- Nginx
 
-### 3. 백엔드 실행
-
-```bash
-cd Backend
-./gradlew bootRun
-```
-
-Windows:
-
-```powershell
-cd Backend
-.\gradlew.bat bootRun
-```
-
-백엔드는 기본적으로 `8080` 포트를 사용합니다.
-
-### 4. 프론트엔드 실행
-
-```bash
-cd Frontend
-npm install
-npm run dev
-```
-
-프론트엔드는 기본적으로 `5173` 포트를 사용합니다.
+실행 후 기본 접속 주소는 `http://localhost`입니다.
 
 ## 환경변수
 
@@ -277,30 +261,3 @@ cd Backend
 - 단순 시세 조회가 아니라 백테스트, 자산 조회, 주문 내역, 봇 관리까지 사용자 흐름을 연결했습니다.
 - 인증이 필요한 API와 공개 API를 분리해 자동매매 관련 기능은 인증 사용자만 사용하도록 구성했습니다.
 - 사용자별 거래소 자격증명을 저장하고, 이를 기반으로 거래소 자산 및 자동매매 기능을 제공합니다.
-
-## 현재 상태
-
-- 프론트엔드 / 백엔드 기본 기능 구현
-- MySQL / InfluxDB용 Docker Compose 구성
-- 백엔드 Dockerfile 존재
-- 배포 전 README, Docker, 서버 배포, 운영 환경변수 분리 작업 필요
-
-## 개선 예정
-
-- 루트 기준 통합 Docker 구성
-- 운영용 환경변수 분리
-- 배포 자동화
-- README 이미지 및 시연 GIF 추가
-- 예외 처리 및 운영 로그 정리
-
-## 지원용으로 강조할 수 있는 포인트
-
-- 실시간 데이터 처리와 WebSocket 기반 UI 갱신 경험
-- Spring Boot 기반 인증, API, 자동매매 도메인 설계 경험
-- 거래소 API 연동, 시계열 데이터 저장, 백테스트 기능 구현 경험
-- 프론트엔드와 백엔드를 직접 연결하며 사용자 흐름 중심으로 서비스 완성 경험
-
-## 참고
-
-- 프론트엔드 개별 설명은 [Frontend/README.md](/C:/exam/gimpalarm/Frontend/README.md)에서 확인할 수 있습니다.
-- 백엔드 컨테이너 이미지는 [Backend/Dockerfile](/C:/exam/gimpalarm/Backend/Dockerfile)에 있습니다.
