@@ -38,6 +38,9 @@ public class TradingBotService {
     private static final String ENTRY_DOMESTIC = "ENTRY_DOMESTIC";
     private static final String ENTRY_FOREIGN = "ENTRY_FOREIGN";
     private static final double DEFAULT_STOP_LOSS_BUFFER_PERCENT = 80.0;
+    private static final double UPBIT_MIN_ORDER_KRW = 5000.0;
+    private static final double BITHUMB_MIN_ORDER_KRW = 5000.0;
+    private static final double BINANCE_MIN_NOTIONAL_USDT = 5.0;
 
     private final KimpService kimpService;
     private final UserRepository userRepository;
@@ -323,21 +326,37 @@ public class TradingBotService {
             }
 
             if (dFilled > minQty) {
-                Map<String, Object> rebalanceDomesticRes = "BITHUMB".equals(domesticEx)
-                        ? exchangeApiService.orderBithumb(trade.getUserId(), symbol, "ask", dFilled - minQty, null, "market")
-                        : exchangeApiService.orderUpbit(trade.getUserId(), symbol, "ask", dFilled - minQty, null, "market");
-                tradeOrderService.recordOrder(
-                        trade.getUserId(), botKey, domesticEx, "SPOT", "REBALANCE_DOMESTIC",
-                        symbol, "SELL", null, "MARKET", dFilled - minQty, null, rebalanceDomesticRes
-                );
+                double domesticRemainderQty = dFilled - minQty;
+                double domesticAveragePrice = parseAveragePrice(domesticEx, dInfo);
+
+                if (shouldSkipSpotDustRebalance(domesticEx, domesticRemainderQty, domesticAveragePrice)) {
+                    log.warn(">>> [REBALANCE-SKIP] below minimum notional. exchange={}, symbol={}, qty={}, estimatedNotional={}",
+                            domesticEx, symbol, domesticRemainderQty, domesticRemainderQty * domesticAveragePrice);
+                } else {
+                    Map<String, Object> rebalanceDomesticRes = "BITHUMB".equals(domesticEx)
+                            ? exchangeApiService.orderBithumb(trade.getUserId(), symbol, "ask", domesticRemainderQty, null, "market")
+                            : exchangeApiService.orderUpbit(trade.getUserId(), symbol, "ask", domesticRemainderQty, null, "market");
+                    tradeOrderService.recordOrder(
+                            trade.getUserId(), botKey, domesticEx, "SPOT", "REBALANCE_DOMESTIC",
+                            symbol, "SELL", null, "MARKET", domesticRemainderQty, null, rebalanceDomesticRes
+                    );
+                }
             }
             if (fFilled > minQty) {
-                Map<String, Object> rebalanceForeignRes = exchangeApiService.orderBinanceFutures(
-                        trade.getUserId(), symbol, "BUY", "SHORT", fFilled - minQty, null, "MARKET");
-                tradeOrderService.recordOrder(
-                        trade.getUserId(), botKey, "BINANCE", "FUTURES", "REBALANCE_FOREIGN",
-                        symbol, "BUY", "SHORT", "MARKET", fFilled - minQty, null, rebalanceForeignRes
-                );
+                double foreignRemainderQty = fFilled - minQty;
+                double foreignAveragePrice = parseAveragePrice("BINANCE", fInfo);
+
+                if (shouldSkipFuturesDustRebalance("BINANCE", foreignRemainderQty, foreignAveragePrice)) {
+                    log.warn(">>> [REBALANCE-SKIP] below minimum notional. exchange=BINANCE, symbol={}, qty={}, estimatedNotional={}",
+                            symbol, foreignRemainderQty, foreignRemainderQty * foreignAveragePrice);
+                } else {
+                    Map<String, Object> rebalanceForeignRes = exchangeApiService.orderBinanceFutures(
+                            trade.getUserId(), symbol, "BUY", "SHORT", foreignRemainderQty, null, "MARKET");
+                    tradeOrderService.recordOrder(
+                            trade.getUserId(), botKey, "BINANCE", "FUTURES", "REBALANCE_FOREIGN",
+                            symbol, "BUY", "SHORT", "MARKET", foreignRemainderQty, null, rebalanceForeignRes
+                    );
+                }
             }
 
             trade.setFilledQty(minQty);
@@ -423,6 +442,45 @@ public class TradingBotService {
             return configured;
         }
         return DEFAULT_STOP_LOSS_BUFFER_PERCENT;
+    }
+
+    private boolean shouldSkipSpotDustRebalance(String exchange, double qty, double referencePrice) {
+        double minimumNotional = resolveSpotMinimumNotional(exchange);
+        if (minimumNotional <= 0) {
+            return false;
+        }
+        if (qty <= 0 || referencePrice <= 0) {
+            return false;
+        }
+        return qty * referencePrice < minimumNotional;
+    }
+
+    private boolean shouldSkipFuturesDustRebalance(String exchange, double qty, double referencePrice) {
+        double minimumNotional = resolveFuturesMinimumNotional(exchange);
+        if (minimumNotional <= 0) {
+            return false;
+        }
+        if (qty <= 0 || referencePrice <= 0) {
+            return false;
+        }
+        return qty * referencePrice < minimumNotional;
+    }
+
+    private double resolveSpotMinimumNotional(String exchange) {
+        if ("UPBIT".equalsIgnoreCase(exchange)) {
+            return UPBIT_MIN_ORDER_KRW;
+        }
+        if ("BITHUMB".equalsIgnoreCase(exchange)) {
+            return BITHUMB_MIN_ORDER_KRW;
+        }
+        return 0.0;
+    }
+
+    private double resolveFuturesMinimumNotional(String exchange) {
+        if ("BINANCE".equalsIgnoreCase(exchange)) {
+            return BINANCE_MIN_NOTIONAL_USDT;
+        }
+        return 0.0;
     }
 
     private boolean resolveUnbalancedFill(String botKey, ActiveTrade trade, String domesticEx, String symbol,
