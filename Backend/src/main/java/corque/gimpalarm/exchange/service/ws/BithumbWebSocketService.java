@@ -1,4 +1,4 @@
-package corque.gimpalarm.coin.service;
+package corque.gimpalarm.exchange.service.ws;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import corque.gimpalarm.coin.dto.BithumbTickerDto;

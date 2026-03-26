@@ -1,9 +1,10 @@
-package corque.gimpalarm.coin.service;
+package corque.gimpalarm.exchange.service.ws;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import corque.gimpalarm.coin.dto.PriceManager;
 import corque.gimpalarm.coin.dto.UpbitTickerDto;
 import corque.gimpalarm.coin.repository.SupportedCoinRepository;
+import corque.gimpalarm.coin.service.UsdKrwCacheService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;

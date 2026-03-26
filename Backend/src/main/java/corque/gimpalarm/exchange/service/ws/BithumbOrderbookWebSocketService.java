@@ -1,4 +1,4 @@
-package corque.gimpalarm.coin.service;
+package corque.gimpalarm.exchange.service.ws;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -8,7 +8,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -17,11 +16,6 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 @Service
@@ -35,10 +29,6 @@ public class BithumbOrderbookWebSocketService {
     private final PriceManager priceManager;
     private final SupportedCoinRepository coinRepository;
 
-    private final Map<String, NavigableMap<Double, Double>> askBooks = new ConcurrentHashMap<>();
-    private final Map<String, NavigableMap<Double, Double>> bidBooks = new ConcurrentHashMap<>();
-    private final AtomicReference<WebSocketSession> sessionRef = new AtomicReference<>();
-
     @EventListener(ApplicationReadyEvent.class)
     public void connect() {
         WebSocketClient client = new StandardWebSocketClient();
@@ -46,7 +36,6 @@ public class BithumbOrderbookWebSocketService {
         client.execute(new TextWebSocketHandler() {
             @Override
             public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-                sessionRef.set(session);
                 List<String> symbols = coinRepository.findAll().stream()
                         .filter(c -> c.isBithumb())
                         .map(c -> "\"" + c.getSymbol().toUpperCase() + "_KRW\"")
@@ -57,9 +46,8 @@ public class BithumbOrderbookWebSocketService {
                     return;
                 }
 
-                session.sendMessage(new TextMessage(buildRealtimeSubscribeMessage(symbols)));
                 session.sendMessage(new TextMessage(buildSnapshotRequestMessage(symbols)));
-                log.info("Bithumb orderbook realtime+snapshot subscribed for {} symbols", symbols.size());
+                log.info("Bithumb orderbook snapshot subscribed for {} symbols", symbols.size());
             }
 
             @Override
@@ -77,12 +65,8 @@ public class BithumbOrderbookWebSocketService {
                     }
 
                     if (content.has("asks") || content.has("bids")) {
-                        applySnapshot(symbol, content);
-                    } else if (content.has("list")) {
-                        applyDepthUpdate(symbol, content.get("list"));
+                        publishSnapshotQuote(symbol, content);
                     }
-
-                    publishBestQuote(symbol);
                 } catch (Exception e) {
                     log.debug("Failed to parse Bithumb orderbook message: {}", e.getMessage());
                 }
@@ -95,36 +79,6 @@ public class BithumbOrderbookWebSocketService {
         }, BITHUMB_WSS_URL);
     }
 
-    @Scheduled(fixedRate = 30000)
-    public void refreshSnapshots() {
-        WebSocketSession session = sessionRef.get();
-        if (session == null || !session.isOpen()) {
-            return;
-        }
-
-        try {
-            List<String> symbols = coinRepository.findAll().stream()
-                    .filter(c -> c.isBithumb())
-                    .map(c -> "\"" + c.getSymbol().toUpperCase() + "_KRW\"")
-                    .collect(Collectors.toList());
-
-            if (symbols.isEmpty()) {
-                return;
-            }
-
-            session.sendMessage(new TextMessage(buildSnapshotRequestMessage(symbols)));
-        } catch (Exception e) {
-            log.warn("Failed to refresh Bithumb orderbook snapshots: {}", e.getMessage());
-        }
-    }
-
-    private String buildRealtimeSubscribeMessage(List<String> symbols) {
-        return String.format(
-                "{\"type\":\"orderbookdepth\", \"symbols\": [%s], \"isOnlyRealtime\": true}",
-                String.join(", ", symbols)
-        );
-    }
-
     private String buildSnapshotRequestMessage(List<String> symbols) {
         return String.format(
                 "{\"type\":\"orderbooksnapshot\", \"symbols\": [%s], \"isOnlySnapshot\": true}",
@@ -132,69 +86,16 @@ public class BithumbOrderbookWebSocketService {
         );
     }
 
-    private void applySnapshot(String symbol, JsonNode content) {
-        NavigableMap<Double, Double> asks = new ConcurrentSkipListMap<>();
-        NavigableMap<Double, Double> bids = new ConcurrentSkipListMap<>((left, right) -> Double.compare(right, left));
+    private void publishSnapshotQuote(String symbol, JsonNode content) {
+        double bestAsk = extractBestAsk(content.get("asks"));
+        double bestBid = extractBestBid(content.get("bids"));
+        String key = "BT_" + symbol;
 
-        fillBook(asks, content.get("asks"));
-        fillBook(bids, content.get("bids"));
-
-        askBooks.put(symbol, asks);
-        bidBooks.put(symbol, bids);
-    }
-
-    private void applyDepthUpdate(String symbol, JsonNode entries) {
-        NavigableMap<Double, Double> asks = askBooks.computeIfAbsent(symbol, key -> new ConcurrentSkipListMap<>());
-        NavigableMap<Double, Double> bids = bidBooks.computeIfAbsent(
-                symbol,
-                key -> new ConcurrentSkipListMap<>((left, right) -> Double.compare(right, left))
-        );
-
-        if (entries == null || !entries.isArray()) {
-            return;
+        if (bestAsk > 0) {
+            priceManager.updateBestAsk(key, bestAsk);
         }
-
-        for (JsonNode entry : entries) {
-            String orderType = text(entry, "orderType");
-            double price = parseDouble(entry, "price");
-            double quantity = parseDouble(entry, "quantity");
-
-            if (price <= 0) {
-                continue;
-            }
-
-            NavigableMap<Double, Double> book = "ask".equalsIgnoreCase(orderType) ? asks : bids;
-            if (quantity <= 0) {
-                book.remove(price);
-            } else {
-                book.put(price, quantity);
-            }
-        }
-    }
-
-    private void fillBook(NavigableMap<Double, Double> book, JsonNode levels) {
-        if (levels == null || !levels.isArray()) {
-            return;
-        }
-
-        for (JsonNode level : levels) {
-            double price = parseSnapshotPrice(level);
-            double quantity = parseSnapshotQuantity(level);
-            if (price > 0 && quantity > 0) {
-                book.put(price, quantity);
-            }
-        }
-    }
-
-    private void publishBestQuote(String symbol) {
-        NavigableMap<Double, Double> asks = askBooks.get(symbol);
-        if (asks != null && !asks.isEmpty()) {
-            priceManager.updateBestAsk("BT_" + symbol, asks.firstKey());
-        }
-
-        NavigableMap<Double, Double> bids = bidBooks.get(symbol);
-        if (bids != null && !bids.isEmpty()) {
-            priceManager.updateBestBid("BT_" + symbol, bids.firstKey());
+        if (bestBid > 0) {
+            priceManager.updateBestBid(key, bestBid);
         }
     }
 
@@ -220,17 +121,38 @@ public class BithumbOrderbookWebSocketService {
         return value != null && !value.isNull() ? value.asText() : null;
     }
 
-    private double parseDouble(JsonNode node, String fieldName) {
-        String value = text(node, fieldName);
-        if (value == null || value.isBlank()) {
+    private double extractBestAsk(JsonNode levels) {
+        if (levels == null || !levels.isArray()) {
             return 0.0;
         }
 
-        try {
-            return Double.parseDouble(value);
-        } catch (NumberFormatException e) {
+        double bestAsk = Double.MAX_VALUE;
+        for (JsonNode level : levels) {
+            double price = parseSnapshotPrice(level);
+            double quantity = parseSnapshotQuantity(level);
+            if (price > 0 && quantity > 0 && price < bestAsk) {
+                bestAsk = price;
+            }
+        }
+
+        return bestAsk == Double.MAX_VALUE ? 0.0 : bestAsk;
+    }
+
+    private double extractBestBid(JsonNode levels) {
+        if (levels == null || !levels.isArray()) {
             return 0.0;
         }
+
+        double bestBid = 0.0;
+        for (JsonNode level : levels) {
+            double price = parseSnapshotPrice(level);
+            double quantity = parseSnapshotQuantity(level);
+            if (price > 0 && quantity > 0 && price > bestBid) {
+                bestBid = price;
+            }
+        }
+
+        return bestBid;
     }
 
     private double parseSnapshotPrice(JsonNode level) {
@@ -240,7 +162,7 @@ public class BithumbOrderbookWebSocketService {
         if (level.isArray() && level.size() >= 1) {
             return parseNodeDouble(level.get(0));
         }
-        return parseDouble(level, "price");
+        return parseFieldDouble(level, "price");
     }
 
     private double parseSnapshotQuantity(JsonNode level) {
@@ -250,7 +172,7 @@ public class BithumbOrderbookWebSocketService {
         if (level.isArray() && level.size() >= 2) {
             return parseNodeDouble(level.get(1));
         }
-        return parseDouble(level, "quantity");
+        return parseFieldDouble(level, "quantity");
     }
 
     private double parseNodeDouble(JsonNode node) {
@@ -259,6 +181,19 @@ public class BithumbOrderbookWebSocketService {
         }
         try {
             return Double.parseDouble(node.asText());
+        } catch (NumberFormatException e) {
+            return 0.0;
+        }
+    }
+
+    private double parseFieldDouble(JsonNode node, String fieldName) {
+        String value = text(node, fieldName);
+        if (value == null || value.isBlank()) {
+            return 0.0;
+        }
+
+        try {
+            return Double.parseDouble(value);
         } catch (NumberFormatException e) {
             return 0.0;
         }
