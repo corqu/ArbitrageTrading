@@ -1,3 +1,6 @@
+### Caches
+/.gradle**
+
 ### env
 *.env*
 
